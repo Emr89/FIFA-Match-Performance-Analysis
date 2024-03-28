@@ -1,0 +1,571 @@
+---
+title: "AFINAL MOD1"
+author: "Eric Rupinski"
+date: "2022-09-18"
+output: word_document
+---
+
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+
+#Clusters
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+BEST_MAE <- function(MOD) {
+  TX <- which.min(MOD$results$MAE)
+  MOD$results[TX, ]
+}
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/CMWC.xlsx")
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude() %>% select(., -UNI_mean,-A_UNI_mean, - TEAM.x_H,-TEAM.x_A)
+#Converting Variables:
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+#One Hot Encoding
+dummy1<- dummyVars(" ~ .", data=MWC18)
+DMWC18 <- data.frame(predict(dummy1, newdata = MWC18))
+
+
+
+#Transforming Data:
+DMWC_preProcValues1 <- preProcess(DMWC18[,-142], method = c("center","scale","YeoJohnson"))
+DMWC_train_d <- predict(DMWC_preProcValues1, DMWC18)
+
+#PCA ONLY
+EMWC_preProcValues1 <- preProcess(DMWC18, method = c("center","scale"))
+EMWC_train_d <- predict(EMWC_preProcValues1, DMWC18)
+
+
+
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+#One Hot Encoding:
+
+dummy <- dummyVars(" ~ .", data=PWC18)
+DPWC18 <- data.frame(predict(dummy, newdata = PWC18))
+
+#Transforming Data sets:
+#Personal Dataset
+DPWC_preProcValues1 <- preProcess(DPWC18, method = c("center","scale","YeoJohnson"))
+DPWC_train_d <- predict(DPWC_preProcValues1, DPWC18)
+
+#Only PCA
+EPWC_preProcValues1 <- preProcess(DPWC18, method = c("center","scale"))
+EPWC_train_d <- predict(EPWC_preProcValues1, DPWC18)
+
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+
+
+```
+
+```{r}
+TG_EN_M94 <- expand.grid(lambda = 0.01, fraction = 0.07)
+
+TG_EN_M54 <- expand.grid(fraction = 0.31 ,lambda = 0.04 )
+
+TG_EN_M51 <- expand.grid(fraction = 0.34 ,lambda = 0.08 )
+
+TG_EN_M46 <- expand.grid(fraction = 0.23 ,lambda = 0.01 )
+
+TG_EN_M45 <- expand.grid(fraction = 0.09 ,lambda = 0.01 )
+
+TG_EN_M43 <- expand.grid(fraction = 0.13 ,lambda = 0.89 )
+
+TG_EN_M39 <- expand.grid(fraction = 0.11 ,lambda = 0.89 )
+
+TG_EN_M105 <- expand.grid(fraction = 0.43 ,lambda = 0.01 )
+
+TG_EN_M102 <- expand.grid(fraction = 0.14 ,lambda = 0.01 )
+
+TG_GLMN_M94 <- expand.grid(alpha = 0.69 , lambda = 0.16 )
+
+TG_GLMN_M48 <- expand.grid(alpha = 0.89 , lambda = 0.1 )
+
+TG_GLMN_M44 <- expand.grid(alpha = 0.14 , lambda = 0.79 )
+
+TG_GLMN_M22 <- expand.grid(alpha = 0.01 , lambda = 0.01 )
+
+TG_GLMN_M107 <- expand.grid(alpha = 0.33 , lambda = 0.17 )
+
+TG_GLMN_M104 <- expand.grid(alpha = 0.55 , lambda = 0.09 )
+
+TG_GLMN_M101 <- expand.grid(alpha = 0.24 , lambda = 0.71 )
+
+
+
+
+TG_RD_M81 <- expand.grid(lambda = 0.86)
+
+TG_RD_M69 <- expand.grid(lambda = 0.89)
+
+TG_RD_M25 <- expand.grid(lambda = 0.82)
+
+TG_RD_M14 <- expand.grid(lambda = 0.23)
+
+```
+
+```{r}
+STG_DXGB11 <- expand.grid(nrounds=c(351),eta = 0.01,gamma = 0,max_depth = c(8),min_child_weight = c(7),subsample = c(0.09),colsample_bytree = c(0.03), rate_drop = c(0.24),skip_drop = c(0.74))
+
+STG_DXGB12 <- expand.grid(nrounds=c(319),eta = 0.01,gamma = 0,max_depth = c(1),min_child_weight = c(11),subsample = c(0.2),colsample_bytree = c(0.95), rate_drop = c(0.13),skip_drop = c(0.64))
+
+STG_DXGB13 <- expand.grid(nrounds=c(423),eta = 0.01,gamma = 0,max_depth = c(9),min_child_weight = c(10),subsample = c(0.16),colsample_bytree = c(0.99), rate_drop = c(0.9),skip_drop = c(0.51))
+
+STG_DXGB14 <- expand.grid(nrounds=c(246),eta = 0.01,gamma = 0,max_depth = c(1),min_child_weight = c(5),subsample = c(0.76),colsample_bytree = c(0.02), rate_drop = c(0.54),skip_drop = c(0.75))
+
+STG_DXGB15 <- expand.grid(nrounds=c(199),eta = 0.01,gamma = 0,max_depth = c(15),min_child_weight = c(3),subsample = c(0.38),colsample_bytree = c(0.01), rate_drop = c(0.16),skip_drop = c(0.99))
+
+STG_DXGB16 <- expand.grid(nrounds=c(194),eta = 0.01,gamma = 0,max_depth = c(5),min_child_weight = c(12),subsample = c(seq(from=0.1,to=0.9,by=0.05)),colsample_bytree = c(0.42), rate_drop = c(0.65),skip_drop = c(0.95))
+
+STG_DXGB17 <- expand.grid(nrounds=c(194),eta = 0.01,gamma = 0,max_depth = c(1),min_child_weight = c(1),subsample = c(0.48),colsample_bytree = c(0.98), rate_drop = c(0.47),skip_drop = c(0.34))
+
+STG_DXGB18 <- expand.grid(nrounds=c(359),eta = 0.01,gamma = 0,max_depth = c(6),min_child_weight = c(2),subsample = c(0.17),colsample_bytree = c(0.04), rate_drop = c(0.91),skip_drop = c(0.77))
+
+STG_DXGB19 <- expand.grid(nrounds=c(317),eta = 0.01,gamma = 0,max_depth = c(1),min_child_weight = c(5),subsample = c(0.46),colsample_bytree = c(0.96), rate_drop = c(0.04),skip_drop = c(0.99))
+
+STG_DXGB20 <- expand.grid(nrounds=c(369),eta = 0.01,gamma = 0,max_depth = c(9),min_child_weight = c(2),subsample = c(0.95),colsample_bytree = c(0.56), rate_drop = c(0.08),skip_drop = c(0.58))
+
+#REAL NROUNDS = 1549
+STG_DXGB21 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(14),min_child_weight = c(2),subsample = c(0.81),colsample_bytree = c(0.70), rate_drop = c(0.03),skip_drop = c(0.94))
+
+#REAL NROUNDS = 2700
+STG_DXGB22 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(2),min_child_weight = c(1),subsample = c(0.17),colsample_bytree = c(0.91), rate_drop = c(0.5),skip_drop = c(0.99))
+
+#REAL NROUNDS = 2587
+STG_DXGB23 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(6),min_child_weight = c(1),subsample = c(0.33),colsample_bytree = c(0.4), rate_drop = c(0.45),skip_drop = c(0.9))
+
+#REAL NROUNDS = 1549
+STG_DXGB24 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(11),min_child_weight = c(5),subsample = c(0.88),colsample_bytree = c(0.3), rate_drop = c(0.02),skip_drop = c(0.87))
+
+STG_DXGB25 <- expand.grid(nrounds=c(361),eta = 0.01,gamma = 0,max_depth = c(15),min_child_weight = c(1),subsample = c(0.67),colsample_bytree = c(0.31), rate_drop = c(0.15),skip_drop = c(0.96))
+
+#REAL NROUNDS = 1286
+STG_DXGB26 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(13),min_child_weight = c(4),subsample = c(0.53),colsample_bytree = c(0.93), rate_drop = c(0.44),skip_drop = c(0.9))
+
+#REAL NROUNDS = 1105
+STG_DXGB27 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(12),min_child_weight = c(2),subsample = c(0.29),colsample_bytree = c(0.79), rate_drop = c(0.63),skip_drop = c(0.95))
+
+
+STG_EXGB11 <- expand.grid(nrounds=c(234),eta = 0.01,gamma = 0,max_depth = c(1),colsample_bytree = c(0.03),min_child_weight = c(4),subsample = c(0.08))
+
+STG_EXGB12 <- expand.grid(nrounds=c(22),eta = 0.01,gamma = 0,max_depth = c(13),colsample_bytree = c(0.09),min_child_weight = c(8),subsample = c(0.2))
+
+STG_EXGB13 <- expand.grid(nrounds=c(194),eta = 0.01,gamma = 0,max_depth = c(6),colsample_bytree = c(0.82),min_child_weight = c(12),subsample = c(0.44))
+
+STG_EXGB14 <- expand.grid(nrounds=c(30),eta = 0.01,gamma = 0,max_depth = c(1),colsample_bytree = c(0.42),min_child_weight = c(7),subsample = c(0.1))
+
+STG_EXGB15 <- expand.grid(nrounds=c(29),eta = 0.01,gamma = 0,max_depth = c(14),colsample_bytree = c(0.03),min_child_weight = c(6),subsample = c(0.1))
+
+STG_EXGB16 <- expand.grid(nrounds=c(169),eta = 0.01,gamma = 0,max_depth = c(10),colsample_bytree = c(0.54),min_child_weight = c(12),subsample = c(0.23))
+
+STG_EXGB17 <- expand.grid(nrounds=c(181),eta = 0.01,gamma = 0,max_depth = c(1),colsample_bytree = c(0.95),min_child_weight = c(2),subsample = c(0.52))
+
+STG_EXGB18 <- expand.grid(nrounds=c(466),eta = 0.01,gamma = 0,max_depth = c(2),colsample_bytree = c(0.03),min_child_weight = c(4),subsample = c(0.19))
+
+STG_EXGB19 <- expand.grid(nrounds=c(121),eta = 0.01,gamma = 0,max_depth = c(1),colsample_bytree = c(0.98),min_child_weight = c(1),subsample = c(0.97))
+
+STG_EXGB20 <- expand.grid(nrounds=c(383),eta = 0.01,gamma = 0,max_depth = c(15),colsample_bytree = c(0.71),min_child_weight = c(1),subsample = c(0.95))
+
+#REAL NROUNDS = 1338
+STG_EXGB21 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(11),colsample_bytree = c(0.73),min_child_weight = c(3),subsample = c(0.87))
+
+#REAL NROUNDS = 3500
+STG_EXGB22 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(11),colsample_bytree = c(0.28),min_child_weight = c(1),subsample = c(0.46))
+
+#REAL NROUNDS = 3550
+STG_EXGB23 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(11),colsample_bytree = c(0.35),min_child_weight = c(1),subsample = c(0.21))
+
+#REAL NROUNDS = 1122
+STG_EXGB24 <- expand.grid(nrounds=c(300),eta = 0.01,gamma = 0,max_depth = c(4),colsample_bytree = c(0.24),min_child_weight = c(5),subsample = c(0.84))
+
+STG_EXGB25 <- expand.grid(nrounds=c(155),eta = 0.01,gamma = 0,max_depth = c(6),colsample_bytree = c(0.15),min_child_weight = c(4),subsample = c(0.9))
+
+STG_EXGB26 <- expand.grid(nrounds=c(381),eta = 0.01,gamma = 0,max_depth = c(2),colsample_bytree = c(0.78),min_child_weight = c(3),subsample = c(0.32))
+
+STG_EXGB27 <- expand.grid(nrounds=c(345),eta = 0.01,gamma = 0,max_depth = c(9),colsample_bytree = c(0.54),min_child_weight = c(1),subsample = c(0.63))
+```
+
+```{r}
+EN_M39<-caret::train(H_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M39)
+
+EN_M43<-caret::train(GS_mean~.-S_mean-A_S_mean-SG_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M43)
+
+EN_M45<-caret::train(SG_mean~.-S_mean-A_S_mean-GS_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M45)
+
+EN_M46<-caret::train(SG_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M46)
+
+EN_M51<-caret::train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M51)
+
+EN_M54<-caret::train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M54)
+
+EN_M94<-caret::train(A_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=EMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M94)
+
+EN_M102<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M102)
+
+EN_M105<-caret::train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="enet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_EN_M105)
+
+GLMN_M22<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl, tuneGrid = TG_GLMN_M22)
+
+GLMN_M44<-caret::train(GS_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M44)
+
+GLMN_M48<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M48)
+
+GLMN_M94<-caret::train(A_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=EMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M94)
+
+GLMN_M101<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-A_DC_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M101)
+
+GLMN_M104<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M104)
+
+GLMN_M107<-caret::train(T_PEN_AREA_mean~.-T_OPP_HALF_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl, tuneGrid = TG_GLMN_M107)
+
+RD_M14<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="ridge",preProcess="pca",trControl=fitControl, tuneGrid = TG_RD_M14)
+
+RD_M25<-caret::train(T_OPP_HALF_mean~.-T_PEN_AREA_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="ridge",preProcess="pca",trControl=fitControl, tuneGrid = TG_RD_M25)
+
+RD_M69<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-MATCH-WP0-WP1,data=EMWC_train_d,method="ridge",preProcess="pca",trControl=fitControl, tuneGrid = TG_RD_M69)
+
+RD_M81<-caret::train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=EMWC_train_d,method="ridge",preProcess="pca",trControl=fitControl, tuneGrid = TG_RD_M81)
+
+```
+
+```{r}
+DXGB11<-caret::train(WP1~.-H_SCORE-A_SCORE-MATCH-WP0,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB11,metric="Rsquared",trControl=fitControl)
+
+DXGB12<-caret::train(H_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB12,metric="Rsquared",trControl=fitControl)
+
+DXGB13<-caret::train(A_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB13,metric="Rsquared",trControl=fitControl)
+
+DXGB14<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB14,metric="Rsquared",trControl=fitControl)
+
+DXGB15<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB15,metric="Rsquared",trControl=fitControl)
+
+DXGB16<-caret::train(GS_mean~.-S_mean-A_S_mean-SG_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB16,metric="Rsquared",trControl=fitControl)
+
+DXGB17<-caret::train(GS_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB17,metric="Rsquared",trControl=fitControl)
+
+DXGB18<-caret::train(SG_mean~.-S_mean-A_S_mean-GS_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB18,metric="Rsquared",trControl=fitControl)
+
+DXGB19<-caret::train(SG_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB19,metric="Rsquared",trControl=fitControl)
+
+DXGB20<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-A_DC_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB20,metric="Rsquared",trControl=fitControl)
+
+DXGB21<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB21,metric="Rsquared",trControl=fitControl)
+
+DXGB22<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB22,metric="Rsquared",trControl=fitControl)
+
+DXGB23<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB23,metric="Rsquared",trControl=fitControl)
+
+DXGB24<-caret::train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB24,metric="Rsquared",trControl=fitControl)
+
+DXGB25<-caret::train(T_OPP_HALF_mean~.-T_PEN_AREA_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB25,metric="Rsquared",trControl=fitControl)
+
+DXGB26<-caret::train(T_PEN_AREA_mean~.-T_OPP_HALF_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB26,metric="Rsquared",trControl=fitControl)
+
+DXGB27<-caret::train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbDART",tuneGrid=STG_DXGB27,metric="Rsquared",trControl=fitControl)
+```
+
+```{R}
+
+EXGB11<-caret::train(WP1~.-H_SCORE-A_SCORE-MATCH-WP0,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB11,metric="Rsquared",trControl=fitControl)
+
+EXGB12<-caret::train(H_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB12,metric="Rsquared",trControl=fitControl)
+
+EXGB13<-caret::train(A_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP0-WP1-MATCH,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB13,metric="Rsquared",trControl=fitControl)
+
+EXGB14<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB14,metric="Rsquared",trControl=fitControl)
+
+EXGB15<-caret::train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB15,metric="Rsquared",trControl=fitControl)
+
+EXGB16<-caret::train(GS_mean~.-S_mean-A_S_mean-SG_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB16,metric="Rsquared",trControl=fitControl)
+
+EXGB17<-caret::train(GS_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB17,metric="Rsquared",trControl=fitControl)
+
+EXGB18<-caret::train(SG_mean~.-S_mean-A_S_mean-GS_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB18,metric="Rsquared",trControl=fitControl)
+
+EXGB19<-caret::train(SG_mean~.-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB19,metric="Rsquared",trControl=fitControl)
+
+EXGB20<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-A_DC_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB20,metric="Rsquared",trControl=fitControl)
+
+EXGB21<-caret::train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB21,metric="Rsquared",trControl=fitControl)
+
+EXGB22<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB22,metric="Rsquared",trControl=fitControl)
+
+EXGB23<-caret::train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB23,metric="Rsquared",trControl=fitControl)
+
+EXGB24<-caret::train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB24,metric="Rsquared",trControl=fitControl)
+
+EXGB25<-caret::train(T_OPP_HALF_mean~.-T_PEN_AREA_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB25,metric="Rsquared",trControl=fitControl)
+
+EXGB26<-caret::train(T_PEN_AREA_mean~.-T_OPP_HALF_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB26,metric="Rsquared",trControl=fitControl)
+
+EXGB27<-caret::train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP0-WP1,data=DMWC_train_d,method="xgbTree",tuneGrid=STG_EXGB27,metric="Rsquared",trControl=fitControl)
+```
+
+```{r}
+#Game Data Set 
+
+#S1 WP subset
+S1DMWC_train_d<- DMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH, -WP0) %>% relocate(.,WP1)
+S2DMWC_train_d<- DMWC_train_d %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(., H_SCORE)
+S3DMWC_train_d<- DMWC_train_d %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,A_SCORE)
+S4DMWC_train_d<- DMWC_train_d %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,PCPA_mean)
+S5DMWC_train_d<- DMWC_train_d %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-(WP0:WP1))%>% relocate(., PCPA_mean)
+S6DMWC_train_d<- DMWC_train_d %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,GS_mean)
+S7DMWC_train_d<- DMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,GS_mean)
+S8DMWC_train_d<- DMWC_train_d %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,SG_mean)
+S9DMWC_train_d<- DMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,SG_mean)
+S10DMWC_train_d<- DMWC_train_d %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,DC_mean)
+S11DMWC_train_d<- DMWC_train_d %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,DC_mean)
+S12DMWC_train_d<- DMWC_train_d %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1)) %>% relocate(., D_IN_POSS_mean)
+S13DMWC_train_d<- DMWC_train_d %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(., D_IN_POSS_mean)
+S14DMWC_train_d<- DMWC_train_d %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,D_NOT_IN_POSS_mean)
+S15DMWC_train_d<- DMWC_train_d %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_OPP_HALF_mean)
+S16DMWC_train_d<- DMWC_train_d %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_PEN_AREA_mean)
+S17DMWC_train_d<- DMWC_train_d %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_ATT_3RD_mean)
+
+#S1 WP subset
+S1EMWC_train_d<- EMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP0) %>% relocate(.,WP1)
+S2EMWC_train_d<- EMWC_train_d %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-(WP0:WP1)) %>% relocate(.,H_SCORE)
+S3EMWC_train_d<- EMWC_train_d %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-(WP0:WP1)) %>% relocate(.,A_SCORE)
+S4EMWC_train_d<- EMWC_train_d %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,PCPA_mean)
+S5EMWC_train_d<- EMWC_train_d %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-(WP0:WP1))%>% relocate(.,PCPA_mean)
+S6EMWC_train_d<- EMWC_train_d %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,GS_mean)
+S7EMWC_train_d<- EMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,GS_mean)
+S8EMWC_train_d<- EMWC_train_d %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,SG_mean)
+S9EMWC_train_d<- EMWC_train_d %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,SG_mean)
+S10EMWC_train_d<- EMWC_train_d %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,DC_mean)
+S11EMWC_train_d<- EMWC_train_d %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,DC_mean)
+S12EMWC_train_d<- EMWC_train_d %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(., D_IN_POSS_mean)
+S13EMWC_train_d<- EMWC_train_d %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(., D_IN_POSS_mean)
+S14EMWC_train_d<- EMWC_train_d %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(., D_NOT_IN_POSS_mean)
+S15EMWC_train_d<- EMWC_train_d %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_OPP_HALF_mean)
+S16EMWC_train_d<- EMWC_train_d %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_PEN_AREA_mean)
+S17EMWC_train_d<- EMWC_train_d %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-(WP0:WP1))%>% relocate(.,T_ATT_3RD_mean)
+```
+
+```{r}
+#LMPRO
+LMPRO11<-rfe(WP1 ~., data=S1DMWC_train_d,rfeControl=ctrl)
+LMPRO12<-rfe(H_SCORE ~., data=S2DMWC_train_d,rfeControl=ctrl)
+LMPRO16<-rfe(GS_mean ~., data=S6DMWC_train_d,rfeControl=ctrl)
+LMPRO17<-rfe(GS_mean ~., data=S7DMWC_train_d,rfeControl=ctrl)
+LMPRO20<-rfe(DC_mean ~., data=S10DMWC_train_d,rfeControl=ctrl)
+LMPRO24<-rfe(D_NOT_IN_POSS_mean ~., data=S14DMWC_train_d,rfeControl=ctrl)
+LMPRO25<-rfe(T_OPP_HALF_mean ~., data=S15DMWC_train_d,rfeControl=ctrl)
+LMPRO26<-rfe(T_PEN_AREA_mean ~. ,data=S16DMWC_train_d,rfeControl=ctrl)
+LMPRO40<-rfe(A_SCORE ~., data=S3EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO41<-rfe(PCPA_mean ~., data=S4EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO45<-rfe(SG_mean ~. ,data=S8EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO46<-rfe(SG_mean ~., data=S9EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO48<-rfe(DC_mean ~., data=S11EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO49<-rfe(D_IN_POSS_mean ~., data=S12EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+LMPRO54<-rfe(T_ATT_3RD_mean ~., data=S17EMWC_train_d,rfeControl=ctrl, preProcess = "pca")
+
+#ARFT
+mtry12<-tuneRF(S2DMWC_train_d[,-1],S2DMWC_train_d$H_SCORE,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry15<-tuneRF(S5DMWC_train_d[,-1],S5DMWC_train_d$PCPA_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+
+best.m12<-mtry12[mtry12[,2]==min(mtry12[,2]),1]
+best.m15<-mtry15[mtry15[,2]==min(mtry15[,2]),1]
+
+ARFT12<-caret::train(H_SCORE ~., data = S2DMWC_train_d,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m12),importance=TRUE,trControl=fitControl)
+ARFT15<-caret::train(PCPA_mean ~., data = S5DMWC_train_d,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m15),importance=TRUE,trControl=fitControl)
+```
+
+```{r}
+EN_M94$results$MAE
+EN_M54$results$MAE
+EN_M51$results$MAE
+EN_M46$results$MAE
+EN_M45$results$MAE
+EN_M43$results$MAE
+EN_M39$results$MAE
+EN_M105$results$MAE
+EN_M102$results$MAE
+GLMN_M94$results$MAE
+GLMN_M48$results$MAE
+GLMN_M44$results$MAE
+GLMN_M22$results$MAE
+GLMN_M107$results$MAE
+GLMN_M104$results$MAE
+GLMN_M101$results$MAE
+RD_M81$results$MAE
+RD_M69$results$MAE
+RD_M25$results$MAE
+RD_M14$results$MAE
+DXGB11$results$MAE
+DXGB12$results$MAE
+DXGB13$results$MAE
+DXGB14$results$MAE
+DXGB15$results$MAE
+DXGB16$results$MAE
+DXGB17$results$MAE
+DXGB18$results$MAE
+DXGB19$results$MAE
+DXGB20$results$MAE
+DXGB21$results$MAE
+DXGB22$results$MAE
+DXGB23$results$MAE
+DXGB24$results$MAE
+DXGB25$results$MAE
+DXGB26$results$MAE
+DXGB27$results$MAE
+EXGB11$results$MAE
+EXGB12$results$MAE
+EXGB13$results$MAE
+EXGB14$results$MAE
+EXGB15$results$MAE
+EXGB16$results$MAE
+EXGB17$results$MAE
+EXGB18$results$MAE
+EXGB19$results$MAE
+EXGB20$results$MAE
+EXGB21$results$MAE
+EXGB22$results$MAE
+EXGB23$results$MAE
+EXGB24$results$MAE
+EXGB25$results$MAE
+EXGB26$results$MAE
+EXGB27$results$MAE
+LMPRO11$results$MAE
+LMPRO12$results$MAE
+LMPRO16$results$MAE
+LMPRO17$results$MAE
+LMPRO20$results$MAE
+LMPRO24$results$MAE
+LMPRO25$results$MAE
+LMPRO26$results$MAE
+LMPRO40$results$MAE
+LMPRO41$results$MAE
+LMPRO45$results$MAE
+LMPRO46$results$MAE
+LMPRO48$results$MAE
+LMPRO49$results$MAE
+LMPRO54$results$MAE
+ARFT12$results$MAE
+ARFT15$results$MAE
+
+
+
+EN_M94$results$Rsquared
+EN_M54$results$Rsquared
+EN_M51$results$Rsquared
+EN_M46$results$Rsquared
+EN_M45$results$Rsquared
+EN_M43$results$Rsquared
+EN_M39$results$Rsquared
+EN_M105$results$Rsquared
+EN_M102$results$Rsquared
+GLMN_M94$results$Rsquared
+GLMN_M48$results$Rsquared
+GLMN_M44$results$Rsquared
+GLMN_M22$results$Rsquared
+GLMN_M107$results$Rsquared
+GLMN_M104$results$Rsquared
+GLMN_M101$results$Rsquared
+RD_M81$results$Rsquared
+RD_M69$results$Rsquared
+RD_M25$results$Rsquared
+RD_M14$results$Rsquared
+DXGB11$results$Rsquared
+DXGB12$results$Rsquared
+DXGB13$results$Rsquared
+DXGB14$results$Rsquared
+DXGB15$results$Rsquared
+DXGB16$results$Rsquared
+DXGB17$results$Rsquared
+DXGB18$results$Rsquared
+DXGB19$results$Rsquared
+DXGB20$results$Rsquared
+DXGB21$results$Rsquared
+DXGB22$results$Rsquared
+DXGB23$results$Rsquared
+DXGB24$results$Rsquared
+DXGB25$results$Rsquared
+DXGB26$results$Rsquared
+DXGB27$results$Rsquared
+EXGB11$results$Rsquared
+EXGB12$results$Rsquared
+EXGB13$results$Rsquared
+EXGB14$results$Rsquared
+EXGB15$results$Rsquared
+EXGB16$results$Rsquared
+EXGB17$results$Rsquared
+EXGB18$results$Rsquared
+EXGB19$results$Rsquared
+EXGB20$results$Rsquared
+EXGB21$results$Rsquared
+EXGB22$results$Rsquared
+EXGB23$results$Rsquared
+EXGB24$results$Rsquared
+EXGB25$results$Rsquared
+EXGB26$results$Rsquared
+EXGB27$results$Rsquared
+LMPRO11$results$Rsquared
+LMPRO12$results$Rsquared
+LMPRO16$results$Rsquared
+LMPRO17$results$Rsquared
+LMPRO20$results$Rsquared
+LMPRO24$results$Rsquared
+LMPRO25$results$Rsquared
+LMPRO26$results$Rsquared
+LMPRO40$results$Rsquared
+LMPRO41$results$Rsquared
+LMPRO45$results$Rsquared
+LMPRO46$results$Rsquared
+LMPRO48$results$Rsquared
+LMPRO49$results$Rsquared
+LMPRO54$results$Rsquared
+ARFT12$results$Rsquared
+ARFT15$results$Rsquared
+
+
+
+```
+
+```{r}
+## When you are done:
+stopCluster(cl)
+
+```

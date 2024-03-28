@@ -1,0 +1,545 @@
+---
+title: "FIFA RF ADV"
+author: "Eric Rupinski"
+date: "2022-08-21"
+output: word_document
+---
+
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/T123.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude()%>% rename(., PCPA_mean = 'PC/PA_mean')%>% rename(., APCPA_mean = 'A_PC/PA_mean') %>% select(., -UNI_mean,-A_UNI_mean)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+#Converting Variables:
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#Subsets:
+S1PWC18<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS,-MATCH)
+S1PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S2PWC18<- PWC18 %>% select(., -GS,-S,-WP,-HS,-AS,-MATCH)
+S2PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S3PWC18<- PWC18 %>% select(.,-WP,-AS,-MATCH)
+S4PWC18<- PWC18 %>% select(.,-WP,-HS,-MATCH)
+S5PWC18<- PWC18 %>% select(., -PC,-PA,-PR,-WP,-HS,-AS,-MATCH)
+S6PWC18<- PWC18 %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S7PWC18<- PWC18 %>% select(., -DC,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S8PWC18<- PWC18 %>% select(., -DC,-D_NOT_IN_POSS,-WP,-HS,-AS,-MATCH)
+
+#Game Data Set 
+
+#S1 WP subset
+S1MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH)
+S2MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-WP)
+S3MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-WP)
+S4MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S5MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-WP)
+S6MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S7MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S8MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S9MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S10MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S11MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S12MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S13MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S14MWC18<- MWC18 %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S15MWC18<- MWC18 %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S16MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S17MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+
+```
+
+
+```{r}
+#Transforming Data sets:
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+```
+
+```{r}
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+
+
+```
+
+```{r}
+#Full Tuned RF
+
+
+  #mtry set
+mtry1<-tuneRF(S1PWC18[,-8],S1PWC18$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry2<-tuneRF(S1PWC18A[,-8],S1PWC18A$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry3<-tuneRF(S2PWC18[,-8],S2PWC18$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry4<-tuneRF(S2PWC18A[,-10],S2PWC18A$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry5<-tuneRF(S3PWC18[,-67],S3PWC18$HS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry6<-tuneRF(S4PWC18[,-67],S4PWC18$AS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry7<-tuneRF(S5PWC18[,-3],S5PWC18$PCPA,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry8<-tuneRF(S6PWC18[,-13],S6PWC18$DC,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry9<-tuneRF(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry10<-tuneRF(S8PWC18[,-13],S8PWC18$D_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry11<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry12<-tuneRF(S2MWC18[,-123],S2MWC18$H_SCORE,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry13<-tuneRF(S3MWC18[,-123],S3MWC18$A_SCORE,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry14<-tuneRF(S4MWC18[,-1],S4MWC18$PCPA_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry15<-tuneRF(S5MWC18[,-1],S5MWC18$PCPA_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry16<-tuneRF(S6MWC18[,-6],S6MWC18$GS_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry17<-tuneRF(S7MWC18[,-6],S7MWC18$GS_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry18<-tuneRF(S8MWC18[,-6],S8MWC18$SG_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry19<-tuneRF(S9MWC18[,-8],S9MWC18$SG_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry20<-tuneRF(S10MWC18[,-11],S10MWC18$DC_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry21<-tuneRF(S11MWC18[,-11],S11MWC18$DC_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry22<-tuneRF(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry23<-tuneRF(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry24<-tuneRF(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry25<-tuneRF(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry26<-tuneRF(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry27<-tuneRF(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry28<-tuneRF(S1PWC18[,-8],S1PWC18$GS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry29<-tuneRF(S1PWC18A[,-8],S1PWC18A$GS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry30<-tuneRF(S2PWC18[,-8],S2PWC18$SG,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry31<-tuneRF(S2PWC18A[,-10],S2PWC18A$SG,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry32<-tuneRF(S3PWC18[,-67],S3PWC18$HS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry33<-tuneRF(S4PWC18[,-67],S4PWC18$AS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry34<-tuneRF(S5PWC18[,-3],S5PWC18$PCPA,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry35<-tuneRF(S6PWC18[,-13],S6PWC18$DC,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry36<-tuneRF(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry37<-tuneRF(S8PWC18[,-13],S8PWC18$D_IN_POSS,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry38<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry39<-tuneRF(S2MWC18[,-123],S2MWC18$H_SCORE,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry40<-tuneRF(S3MWC18[,-123],S3MWC18$A_SCORE,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry41<-tuneRF(S4MWC18[,-1],S4MWC18$PCPA_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry42<-tuneRF(S5MWC18[,-1],S5MWC18$PCPA_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry43<-tuneRF(S6MWC18[,-6],S6MWC18$GS_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry44<-tuneRF(S7MWC18[,-6],S7MWC18$GS_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry45<-tuneRF(S8MWC18[,-6],S8MWC18$SG_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry46<-tuneRF(S9MWC18[,-8],S9MWC18$SG_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry47<-tuneRF(S10MWC18[,-11],S10MWC18$DC_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry48<-tuneRF(S11MWC18[,-11],S11MWC18$DC_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry49<-tuneRF(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry50<-tuneRF(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry51<-tuneRF(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry52<-tuneRF(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry53<-tuneRF(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry54<-tuneRF(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry55<-tuneRF(S1PWC18[,-8],S1PWC18$GS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry56<-tuneRF(S1PWC18A[,-8],S1PWC18A$GS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry57<-tuneRF(S2PWC18[,-8],S2PWC18$SG,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry58<-tuneRF(S2PWC18A[,-10],S2PWC18A$SG,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry59<-tuneRF(S3PWC18[,-67],S3PWC18$HS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry60<-tuneRF(S4PWC18[,-67],S4PWC18$AS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry61<-tuneRF(S5PWC18[,-3],S5PWC18$PCPA,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry62<-tuneRF(S6PWC18[,-13],S6PWC18$DC,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry63<-tuneRF(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry64<-tuneRF(S8PWC18[,-13],S8PWC18$D_IN_POSS,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry65<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry66<-tuneRF(S2MWC18[,-123],S2MWC18$H_SCORE,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry67<-tuneRF(S3MWC18[,-123],S3MWC18$A_SCORE,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry68<-tuneRF(S4MWC18[,-1],S4MWC18$PCPA_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry69<-tuneRF(S5MWC18[,-1],S5MWC18$PCPA_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry70<-tuneRF(S6MWC18[,-6],S6MWC18$GS_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry71<-tuneRF(S7MWC18[,-6],S7MWC18$GS_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry72<-tuneRF(S8MWC18[,-6],S8MWC18$SG_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry73<-tuneRF(S9MWC18[,-8],S9MWC18$SG_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry74<-tuneRF(S10MWC18[,-11],S10MWC18$DC_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry75<-tuneRF(S11MWC18[,-11],S11MWC18$DC_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry76<-tuneRF(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry77<-tuneRF(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry78<-tuneRF(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry79<-tuneRF(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry80<-tuneRF(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry81<-tuneRF(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+
+#best mtry
+best.m1<-mtry1[mtry1[,2]==min(mtry1[,2]),1]
+best.m2<-mtry2[mtry2[,2]==min(mtry2[,2]),1]
+best.m3<-mtry3[mtry3[,2]==min(mtry3[,2]),1]
+best.m4<-mtry4[mtry4[,2]==min(mtry4[,2]),1]
+best.m5<-mtry5[mtry5[,2]==min(mtry5[,2]),1]
+best.m6<-mtry6[mtry6[,2]==min(mtry6[,2]),1]
+best.m7<-mtry7[mtry7[,2]==min(mtry7[,2]),1]
+best.m8<-mtry8[mtry8[,2]==min(mtry8[,2]),1]
+best.m9<-mtry9[mtry9[,2]==min(mtry9[,2]),1]
+best.m10<-mtry10[mtry10[,2]==min(mtry10[,2]),1]
+best.m11<-mtry11[mtry11[,2]==min(mtry11[,2]),1]
+best.m12<-mtry12[mtry12[,2]==min(mtry12[,2]),1]
+best.m13<-mtry13[mtry13[,2]==min(mtry13[,2]),1]
+best.m14<-mtry14[mtry14[,2]==min(mtry14[,2]),1]
+best.m15<-mtry15[mtry15[,2]==min(mtry15[,2]),1]
+best.m16<-mtry16[mtry16[,2]==min(mtry16[,2]),1]
+best.m17<-mtry17[mtry17[,2]==min(mtry17[,2]),1]
+best.m18<-mtry18[mtry18[,2]==min(mtry18[,2]),1]
+best.m19<-mtry19[mtry19[,2]==min(mtry19[,2]),1]
+best.m20<-mtry20[mtry20[,2]==min(mtry20[,2]),1]
+best.m21<-mtry21[mtry21[,2]==min(mtry21[,2]),1]
+best.m22<-mtry22[mtry22[,2]==min(mtry22[,2]),1]
+best.m23<-mtry23[mtry23[,2]==min(mtry23[,2]),1]
+best.m24<-mtry24[mtry24[,2]==min(mtry24[,2]),1]
+best.m25<-mtry25[mtry25[,2]==min(mtry25[,2]),1]
+best.m26<-mtry26[mtry26[,2]==min(mtry26[,2]),1]
+best.m27<-mtry27[mtry27[,2]==min(mtry27[,2]),1]
+best.m28<-mtry28[mtry28[,2]==min(mtry28[,2]),1]
+best.m29<-mtry29[mtry29[,2]==min(mtry29[,2]),1]
+best.m30<-mtry30[mtry30[,2]==min(mtry30[,2]),1]
+best.m31<-mtry31[mtry31[,2]==min(mtry31[,2]),1]
+best.m32<-mtry32[mtry32[,2]==min(mtry32[,2]),1]
+best.m33<-mtry33[mtry33[,2]==min(mtry33[,2]),1]
+best.m34<-mtry34[mtry34[,2]==min(mtry34[,2]),1]
+best.m35<-mtry35[mtry35[,2]==min(mtry35[,2]),1]
+best.m36<-mtry36[mtry36[,2]==min(mtry36[,2]),1]
+best.m37<-mtry37[mtry37[,2]==min(mtry37[,2]),1]
+best.m38<-mtry38[mtry38[,2]==min(mtry38[,2]),1]
+best.m39<-mtry39[mtry39[,2]==min(mtry39[,2]),1]
+best.m40<-mtry40[mtry40[,2]==min(mtry40[,2]),1]
+best.m41<-mtry41[mtry41[,2]==min(mtry41[,2]),1]
+best.m42<-mtry42[mtry42[,2]==min(mtry42[,2]),1]
+best.m43<-mtry43[mtry43[,2]==min(mtry43[,2]),1]
+best.m44<-mtry44[mtry44[,2]==min(mtry44[,2]),1]
+best.m45<-mtry45[mtry45[,2]==min(mtry45[,2]),1]
+best.m46<-mtry46[mtry46[,2]==min(mtry46[,2]),1]
+best.m47<-mtry47[mtry47[,2]==min(mtry47[,2]),1]
+best.m48<-mtry48[mtry48[,2]==min(mtry48[,2]),1]
+best.m49<-mtry49[mtry49[,2]==min(mtry49[,2]),1]
+best.m50<-mtry50[mtry50[,2]==min(mtry50[,2]),1]
+best.m51<-mtry51[mtry51[,2]==min(mtry51[,2]),1]
+best.m52<-mtry52[mtry52[,2]==min(mtry52[,2]),1]
+best.m53<-mtry53[mtry53[,2]==min(mtry53[,2]),1]
+best.m54<-mtry54[mtry54[,2]==min(mtry54[,2]),1]
+best.m55<-mtry55[mtry55[,2]==min(mtry55[,2]),1]
+best.m56<-mtry56[mtry56[,2]==min(mtry56[,2]),1]
+best.m57<-mtry57[mtry57[,2]==min(mtry57[,2]),1]
+best.m58<-mtry58[mtry58[,2]==min(mtry58[,2]),1]
+best.m59<-mtry59[mtry59[,2]==min(mtry59[,2]),1]
+best.m60<-mtry60[mtry60[,2]==min(mtry60[,2]),1]
+best.m61<-mtry61[mtry61[,2]==min(mtry61[,2]),1]
+best.m62<-mtry62[mtry62[,2]==min(mtry62[,2]),1]
+best.m63<-mtry63[mtry63[,2]==min(mtry63[,2]),1]
+best.m64<-mtry64[mtry64[,2]==min(mtry64[,2]),1]
+best.m65<-mtry65[mtry65[,2]==min(mtry65[,2]),1]
+best.m66<-mtry66[mtry66[,2]==min(mtry66[,2]),1]
+best.m67<-mtry67[mtry67[,2]==min(mtry67[,2]),1]
+best.m68<-mtry68[mtry68[,2]==min(mtry68[,2]),1]
+best.m69<-mtry69[mtry69[,2]==min(mtry69[,2]),1]
+best.m70<-mtry70[mtry70[,2]==min(mtry70[,2]),1]
+best.m71<-mtry71[mtry71[,2]==min(mtry71[,2]),1]
+best.m72<-mtry72[mtry72[,2]==min(mtry72[,2]),1]
+best.m73<-mtry73[mtry73[,2]==min(mtry73[,2]),1]
+best.m74<-mtry74[mtry74[,2]==min(mtry74[,2]),1]
+best.m75<-mtry75[mtry75[,2]==min(mtry75[,2]),1]
+best.m76<-mtry76[mtry76[,2]==min(mtry76[,2]),1]
+best.m77<-mtry77[mtry77[,2]==min(mtry77[,2]),1]
+best.m78<-mtry78[mtry78[,2]==min(mtry78[,2]),1]
+best.m79<-mtry79[mtry79[,2]==min(mtry79[,2]),1]
+best.m80<-mtry80[mtry80[,2]==min(mtry80[,2]),1]
+best.m81<-mtry81[mtry81[,2]==min(mtry81[,2]),1]
+
+
+#Random Forest Models:
+ARFT1<-train(S1PWC18[,-8],S1PWC18$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m1),importance=TRUE,trControl=fitControl)
+ARFT2<-train(S1PWC18A[,-8],S1PWC18A$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m2),importance=TRUE,trControl=fitControl)
+ARFT3<-train(S2PWC18[,-8],S2PWC18$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m3),importance=TRUE,trControl=fitControl)
+ARFT4<-train(S2PWC18A[,-10],S2PWC18A$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m4),importance=TRUE,trControl=fitControl)
+ARFT5<-train(S3PWC18[,-67],S3PWC18$HS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m5),importance=TRUE,trControl=fitControl)
+ARFT6<-train(S4PWC18[,-67],S4PWC18$AS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m6),importance=TRUE,trControl=fitControl)
+ARFT7<-train(S5PWC18[,-3],S5PWC18$PCPA,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m7),importance=TRUE,trControl=fitControl)
+ARFT8<-train(S6PWC18[,-13],S6PWC18$DC,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m8),importance=TRUE,trControl=fitControl)
+ARFT9<-train(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m9),importance=TRUE,trControl=fitControl)
+ARFT10<-train(S8PWC18[,-13],S8PWC18$D_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m10),importance=TRUE,trControl=fitControl)
+#ARFT11<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m11),importance=TRUE,trControl=fitControl)
+ARFT12<-train(S2MWC18[,-123],S2MWC18$H_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m12),importance=TRUE,trControl=fitControl)
+ARFT13<-train(S3MWC18[,-123],S3MWC18$A_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m13),importance=TRUE,trControl=fitControl)
+ARFT14<-train(S4MWC18[,-1],S4MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m14),importance=TRUE,trControl=fitControl)
+ARFT15<-train(S5MWC18[,-1],S5MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m15),importance=TRUE,trControl=fitControl)
+ARFT16<-train(S6MWC18[,-6],S6MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m16),importance=TRUE,trControl=fitControl)
+ARFT17<-train(S7MWC18[,-6],S7MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m17),importance=TRUE,trControl=fitControl)
+ARFT18<-train(S8MWC18[,-6],S8MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m18),importance=TRUE,trControl=fitControl)
+ARFT19<-train(S9MWC18[,-8],S9MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m19),importance=TRUE,trControl=fitControl)
+ARFT20<-train(S10MWC18[,-11],S10MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m20),importance=TRUE,trControl=fitControl)
+ARFT21<-train(S11MWC18[,-11],S11MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m21),importance=TRUE,trControl=fitControl)
+ARFT22<-train(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m22),importance=TRUE,trControl=fitControl)
+ARFT23<-train(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m23),importance=TRUE,trControl=fitControl)
+ARFT24<-train(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m24),importance=TRUE,trControl=fitControl)
+ARFT25<-train(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m25),importance=TRUE,trControl=fitControl)
+ARFT26<-train(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m26),importance=TRUE,trControl=fitControl)
+ARFT27<-train(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m27),importance=TRUE,trControl=fitControl)
+ARFT28<-train(S1PWC18[,-8],S1PWC18$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m28),importance=TRUE,trControl=fitControl)
+ARFT29<-train(S1PWC18A[,-8],S1PWC18A$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m29),importance=TRUE,trControl=fitControl)
+ARFT30<-train(S2PWC18[,-8],S2PWC18$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m30),importance=TRUE,trControl=fitControl)
+ARFT31<-train(S2PWC18A[,-10],S2PWC18A$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m31),importance=TRUE,trControl=fitControl)
+ARFT32<-train(S3PWC18[,-67],S3PWC18$HS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m32),importance=TRUE,trControl=fitControl)
+ARFT33<-train(S4PWC18[,-67],S4PWC18$AS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m33),importance=TRUE,trControl=fitControl)
+ARFT34<-train(S5PWC18[,-3],S5PWC18$PCPA,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m34),importance=TRUE,trControl=fitControl)
+ARFT35<-train(S6PWC18[,-13],S6PWC18$DC,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m35),importance=TRUE,trControl=fitControl)
+ARFT36<-train(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m36),importance=TRUE,trControl=fitControl)
+ARFT37<-train(S8PWC18[,-13],S8PWC18$D_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m37),importance=TRUE,trControl=fitControl)
+#ARFT38<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m38),importance=TRUE,trControl=fitControl)
+ARFT39<-train(S2MWC18[,-123],S2MWC18$H_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m39),importance=TRUE,trControl=fitControl)
+ARFT40<-train(S3MWC18[,-123],S3MWC18$A_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m40),importance=TRUE,trControl=fitControl)
+ARFT41<-train(S4MWC18[,-1],S4MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m41),importance=TRUE,trControl=fitControl)
+ARFT42<-train(S5MWC18[,-1],S5MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m42),importance=TRUE,trControl=fitControl)
+ARFT43<-train(S6MWC18[,-6],S6MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m43),importance=TRUE,trControl=fitControl)
+ARFT44<-train(S7MWC18[,-6],S7MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m44),importance=TRUE,trControl=fitControl)
+ARFT45<-train(S8MWC18[,-6],S8MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m45),importance=TRUE,trControl=fitControl)
+ARFT46<-train(S9MWC18[,-8],S9MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m46),importance=TRUE,trControl=fitControl)
+ARFT47<-train(S10MWC18[,-11],S10MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m47),importance=TRUE,trControl=fitControl)
+ARFT48<-train(S11MWC18[,-11],S11MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m48),importance=TRUE,trControl=fitControl)
+ARFT49<-train(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m49),importance=TRUE,trControl=fitControl)
+ARFT50<-train(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m50),importance=TRUE,trControl=fitControl)
+ARFT51<-train(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m51),importance=TRUE,trControl=fitControl)
+ARFT52<-train(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m52),importance=TRUE,trControl=fitControl)
+ARFT53<-train(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m53),importance=TRUE,trControl=fitControl)
+ARFT54<-train(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m54),importance=TRUE,trControl=fitControl)
+ARFT55<-train(S1PWC18[,-8],S1PWC18$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m55),importance=TRUE,trControl=fitControl)
+ARFT56<-train(S1PWC18A[,-8],S1PWC18A$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m56),importance=TRUE,trControl=fitControl)
+ARFT57<-train(S2PWC18[,-8],S2PWC18$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m57),importance=TRUE,trControl=fitControl)
+ARFT58<-train(S2PWC18A[,-10],S2PWC18A$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m58),importance=TRUE,trControl=fitControl)
+ARFT59<-train(S3PWC18[,-67],S3PWC18$HS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m59),importance=TRUE,trControl=fitControl)
+ARFT60<-train(S4PWC18[,-67],S4PWC18$AS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m60),importance=TRUE,trControl=fitControl)
+ARFT61<-train(S5PWC18[,-3],S5PWC18$PCPA,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m61),importance=TRUE,trControl=fitControl)
+ARFT62<-train(S6PWC18[,-13],S6PWC18$DC,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m62),importance=TRUE,trControl=fitControl)
+ARFT63<-train(S7PWC18[,-13],S7PWC18$D_NOT_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m63),importance=TRUE,trControl=fitControl)
+ARFT64<-train(S8PWC18[,-13],S8PWC18$D_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m64),importance=TRUE,trControl=fitControl)
+#ARFT65<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m65),importance=TRUE,trControl=fitControl)
+ARFT66<-train(S2MWC18[,-123],S2MWC18$H_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m66),importance=TRUE,trControl=fitControl)
+ARFT67<-train(S3MWC18[,-123],S3MWC18$A_SCORE,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m67),importance=TRUE,trControl=fitControl)
+ARFT68<-train(S4MWC18[,-1],S4MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m68),importance=TRUE,trControl=fitControl)
+ARFT69<-train(S5MWC18[,-1],S5MWC18$PCPA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m69),importance=TRUE,trControl=fitControl)
+ARFT70<-train(S6MWC18[,-6],S6MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m70),importance=TRUE,trControl=fitControl)
+ARFT71<-train(S7MWC18[,-6],S7MWC18$GS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m71),importance=TRUE,trControl=fitControl)
+ARFT72<-train(S8MWC18[,-6],S8MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m72),importance=TRUE,trControl=fitControl)
+ARFT73<-train(S9MWC18[,-8],S9MWC18$SG_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m73),importance=TRUE,trControl=fitControl)
+ARFT74<-train(S10MWC18[,-11],S10MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m74),importance=TRUE,trControl=fitControl)
+ARFT75<-train(S11MWC18[,-11],S11MWC18$DC_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m75),importance=TRUE,trControl=fitControl)
+ARFT76<-train(S12MWC18[,-11],S12MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m76),importance=TRUE,trControl=fitControl)
+ARFT77<-train(S13MWC18[,-11],S13MWC18$D_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m77),importance=TRUE,trControl=fitControl)
+ARFT78<-train(S14MWC18[,-11],S14MWC18$D_NOT_IN_POSS_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m78),importance=TRUE,trControl=fitControl)
+ARFT79<-train(S15MWC18[,-14],S15MWC18$T_OPP_HALF_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m79),importance=TRUE,trControl=fitControl)
+ARFT80<-train(S16MWC18[,-14],S16MWC18$T_PEN_AREA_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m80),importance=TRUE,trControl=fitControl)
+ARFT81<-train(S17MWC18[,-14],S17MWC18$T_ATT_3RD_mean,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m81),importance=TRUE,trControl=fitControl)
+```
+
+```{r}
+ARFT1
+ARFT2
+ARFT3
+ARFT4
+ARFT5
+ARFT6
+ARFT7
+ARFT8
+ARFT9
+ARFT10
+#ARFT11
+ARFT12
+ARFT13
+ARFT14
+ARFT15
+ARFT16
+ARFT17
+ARFT18
+ARFT19
+ARFT20
+ARFT21
+ARFT22
+ARFT23
+ARFT24
+ARFT25
+ARFT26
+ARFT27
+ARFT28
+ARFT29
+ARFT30
+ARFT31
+ARFT32
+ARFT33
+ARFT34
+ARFT35
+ARFT36
+ARFT37
+#ARFT38
+ARFT39
+ARFT40
+ARFT41
+ARFT42
+ARFT43
+ARFT44
+ARFT45
+ARFT46
+ARFT47
+ARFT48
+ARFT49
+ARFT50
+ARFT51
+ARFT52
+ARFT53
+ARFT54
+ARFT55
+ARFT56
+ARFT57
+ARFT58
+ARFT59
+ARFT60
+ARFT61
+ARFT62
+ARFT63
+ARFT64
+#ARFT65
+ARFT66
+ARFT67
+ARFT68
+ARFT69
+ARFT70
+ARFT71
+ARFT72
+ARFT73
+ARFT74
+ARFT75
+ARFT76
+ARFT77
+ARFT78
+ARFT79
+ARFT80
+ARFT81
+
+
+
+ARFT1$results$Rsquared
+ARFT2$results$Rsquared
+ARFT3$results$Rsquared
+ARFT4$results$Rsquared
+ARFT5$results$Rsquared
+ARFT6$results$Rsquared
+ARFT7$results$Rsquared
+ARFT8$results$Rsquared
+ARFT9$results$Rsquared
+ARFT10$results$Rsquared
+ARFT11$results$Rsquared
+ARFT12$results$Rsquared
+ARFT13$results$Rsquared
+ARFT14$results$Rsquared
+ARFT15$results$Rsquared
+ARFT16$results$Rsquared
+ARFT17$results$Rsquared
+ARFT18$results$Rsquared
+ARFT19$results$Rsquared
+ARFT20$results$Rsquared
+ARFT21$results$Rsquared
+ARFT22$results$Rsquared
+ARFT23$results$Rsquared
+ARFT24$results$Rsquared
+ARFT25$results$Rsquared
+ARFT26$results$Rsquared
+ARFT27$results$Rsquared
+ARFT28$results$Rsquared
+ARFT29$results$Rsquared
+ARFT30$results$Rsquared
+ARFT31$results$Rsquared
+ARFT32$results$Rsquared
+ARFT33$results$Rsquared
+ARFT34$results$Rsquared
+ARFT35$results$Rsquared
+ARFT36$results$Rsquared
+ARFT37$results$Rsquared
+ARFT38$results$Rsquared
+ARFT39$results$Rsquared
+ARFT40$results$Rsquared
+ARFT41$results$Rsquared
+ARFT42$results$Rsquared
+ARFT43$results$Rsquared
+ARFT44$results$Rsquared
+ARFT45$results$Rsquared
+ARFT46$results$Rsquared
+ARFT47$results$Rsquared
+ARFT48$results$Rsquared
+ARFT49$results$Rsquared
+ARFT50$results$Rsquared
+ARFT51$results$Rsquared
+ARFT52$results$Rsquared
+ARFT53$results$Rsquared
+ARFT54$results$Rsquared
+ARFT55$results$Rsquared
+ARFT56$results$Rsquared
+ARFT57$results$Rsquared
+ARFT58$results$Rsquared
+ARFT59$results$Rsquared
+ARFT60$results$Rsquared
+ARFT61$results$Rsquared
+ARFT62$results$Rsquared
+ARFT63$results$Rsquared
+ARFT64$results$Rsquared
+ARFT65$results$Rsquared
+ARFT66$results$Rsquared
+ARFT67$results$Rsquared
+ARFT68$results$Rsquared
+ARFT69$results$Rsquared
+ARFT70$results$Rsquared
+ARFT71$results$Rsquared
+ARFT72$results$Rsquared
+ARFT73$results$Rsquared
+ARFT74$results$Rsquared
+ARFT75$results$Rsquared
+ARFT76$results$Rsquared
+ARFT77$results$Rsquared
+ARFT78$results$Rsquared
+ARFT79$results$Rsquared
+ARFT80$results$Rsquared
+ARFT81$results$Rsquared
+
+## When you are done:
+stopCluster(cl)
+```
+

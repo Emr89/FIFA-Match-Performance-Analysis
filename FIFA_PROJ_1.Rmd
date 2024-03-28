@@ -1,0 +1,632 @@
+---
+title: "FIFA_PROJ_1"
+author: "Eric Rupinski"
+date: "2022-08-18"
+output: html_document
+---
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+
+
+#Full Game Data
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/T123.xlsx")
+
+#Team Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+TEAMWC18 <- read_excel("~/Desktop/TEAMWC18.xlsx") %>% select(.,-POS_mean,-`Preferred Foot.x_mean`,-WorkRate_mean,)
+
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude()%>% rename(., PCPA_mean = 'PC/PA_mean')%>% rename(., APCPA_mean = 'A_PC/PA_mean')
+
+#Creating Full Team Data Set
+TWC18 <- TEAMWC18 %>% left_join(., E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0")) %>% na.exclude() %>% rename(., PCPA_mean = 'PC/PA_mean')
+
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x')
+
+
+#Subsets:
+
+#S1, Wihtout Shots on goal,Shot, Win Probability, or any Score Value
+S1PWC18<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS)
+S1PWC18_preProcValues1 <- preProcess(S1PWC18, method = c("center","scale","YeoJohnson"))
+S1PWC18_train_d <- predict(S1PWC18_preProcValues1, S1PWC18)
+
+#S2, Wihtout Goals score ,Shot, Win Probability, or any Score Value
+S2PWC18<- PWC18 %>% select(., -GS,-S,-WP,-HS,-AS)
+S2PWC18_preProcValues1 <- preProcess(S2PWC18, method = c("center","scale","YeoJohnson"))
+S2PWC18_train_d <- predict(S2PWC18_preProcValues1, S2PWC18)
+
+
+#Converting Variables:
+TWC18$H_FORM <- as.factor(TWC18$H_FORM)
+TWC18$A_FORM <- as.factor(TWC18$A_FORM)
+TWC18$WP <- as.factor(TWC18$WP)
+
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#Transforming Data sets:
+#Transforming cleaned data sets
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Team Dataset
+TWC_preProcValues1 <- preProcess(TWC18, method = c("center","scale","YeoJohnson"))
+TWC_train_d <- predict(TWC_preProcValues1, TWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+#Subsets
+
+```
+
+
+```{r}
+#PCA Analysis:
+
+#Personal Data Set:
+  #GS
+PWC_preProc_1 <- preProcess(PWC_train_d[,-9],method="pca",thresh = 0.85)
+PWC_trainPC_1 <- predict(PWC_preProc_1,PWC_train_d[,-9])
+
+  #GS TYPE 2 
+S1PWC18_preProc_1 <- preProcess(S1PWC18_train_d[,-9],method="pca",thresh = 0.85)
+S1PWC18_trainPC_1 <- predict(S1PWC18_preProc_1,S1PWC18_train_d[,-9])
+
+#SG 
+PWC_preProc_2 <- preProcess(PWC_train_d[,-11],method="pca",thresh = 0.85)
+PWC_trainPC_2 <- predict(PWC_preProc_2,PWC_train_d[,-11])
+
+#SG TYPE 2 
+S2PWC18_preProc_1 <- preProcess(S2PWC18_train_d[,-9],method="pca",thresh = 0.85)
+S2PWC18_trainPC_1 <- predict(S2PWC18_preProc_1,S2PWC18_train_d[,-9])
+
+#HS 
+PWC_preProc_3 <- preProcess(PWC_train_d[,-69],method="pca",thresh = 0.85)
+PWC_trainPC_3 <- predict(PWC_preProc_3,PWC_train_d[,-69])
+
+
+#Team Data Set:
+  
+
+
+```
+
+
+```{r}
+#Data Visualization:
+
+#Personal Data set:
+
+
+RF1 <- randomForest(HS ~.-GS_mean - MATCH, data = TWC18)
+RF2 <- randomForest(H_SCORE ~.-GS_mean - MATCH-WP-DC_mean, data = MWC18)
+RF3 <- randomForest(WP ~., data = TWC18)
+RF4 <- randomForest(WP ~., data = MWC18)
+
+RF5 <- randomForest(SG_mean ~.-GS_mean-S_mean, data = TWC18)
+RF6 <- randomForest(SG_mean ~.-GS_mean-S_mean, data = MWC18)
+
+RF7 <- randomForest(GS ~.- MATCH, data = PWC18)
+
+
+RF8 <- randomForest(DC_mean ~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean, data = MWC18)
+  #GS
+
+#GS by country and POS
+ggplot(data = PWC18,
+       mapping = aes(x = GS, fill = POS)) +
+  geom_histogram(alpha = 0.5, bins = 50) +
+  labs(x = "GS", y = "Count",
+       title = "Goals Scored by Team and Position") +
+  facet_grid(. ~ TEAM.x) +
+  theme_bw()
+
+```
+
+
+
+
+
+```{r}
+#PCA Take 1:
+
+#Personal Data set:
+  #GS
+pairs.panels(PWC18[,-9],
+             gap = 0,
+             bg = c("red", "yellow", "blue")[PWC18$GS],
+             pch=21)
+
+
+
+```
+
+
+```{r}
+#Function for RF Variable Importance:
+#A function that creates a variable importance score
+I_SCORE_FUNC <- function(RF_TEST){
+i_scores <- varImp(RF_TEST ,conditional=TRUE)
+#Gathering rownames in 'var'  and converting it to the factor
+#to provide 'fill' parameter for the bar chart. 
+i_scores <- i_scores %>% tibble::rownames_to_column("var") 
+i_scores$var<- i_scores$var %>% as.factor()
+#Plotting the bar and polar charts for comparing variables
+i_bar <- ggplot(data = i_scores) + 
+  geom_bar(
+    stat = "identity",#it leaves the data without count and bin
+    mapping = aes(x = var, y=Overall, fill = var), 
+    show.legend = FALSE,
+    width = 1
+  ) + 
+  labs(x = NULL, y = NULL)
+i_bar + coord_polar() + theme_minimal()
+i_bar + coord_flip() + theme_minimal()
+}
+#I_SCORE_FUNC(#RFObject)
+```
+
+
+```{r}
+#Regsubsets
+library(leaps)
+
+  #GS Model TYPE 1 & 2
+RS1 <- regsubsets(GS ~.-MATCH-UNI-HS-AS-TEAM.x-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS2 <- regsubsets(GS ~.-MATCH-UNI-HS-AS-TEAM.x-S-SG-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS1 <- summary(RS1)
+SUMRS2 <- summary(RS2)
+
+DS1 <- data.frame(
+  Adj.R2 = which.max(SUMRS1$adjr2),
+  CP = which.min(SUMRS1$cp),
+  BIC = which.min(SUMRS1$bic))
+summary(RS1)
+
+DS2 <- data.frame(
+  Adj.R2 = which.max(SUMRS2$adjr2),
+  CP = which.min(SUMRS2$cp),
+  BIC = which.min(SUMRS2$bic))
+summary(RS2)
+
+ #SG Model TYPE 1 & 2
+RS3 <- regsubsets(SG ~.-MATCH-UNI-HS-AS-TEAM.x-WP-GS,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS4 <- regsubsets(SG ~.-MATCH-UNI-HS-AS-TEAM.x-S-GS-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS3 <- summary(RS3)
+SUMRS4 <- summary(RS4)
+
+DS3 <- data.frame(
+  Adj.R2 = which.max(SUMRS3$adjr2),
+  CP = which.min(SUMRS3$cp),
+  BIC = which.min(SUMRS3$bic))
+summary(RS3)
+
+DS4 <- data.frame(
+  Adj.R2 = which.max(SUMRS4$adjr2),
+  CP = which.min(SUMRS4$cp),
+  BIC = which.min(SUMRS4$bic))
+summary(RS4)
+
+ #HS Model TYPE 1 & 2
+RS5 <- regsubsets(HS ~.-MATCH-UNI-AS-TEAM.x-WP-GS,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS6 <- regsubsets(HS ~.-MATCH-UNI-AS-TEAM.x-S-GS-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS5 <- summary(RS5)
+SUMRS6 <- summary(RS6)
+
+DS5 <- data.frame(
+  Adj.R2 = which.max(SUMRS5$adjr2),
+  CP = which.min(SUMRS5$cp),
+  BIC = which.min(SUMRS5$bic))
+summary(RS5)
+DS6 <- data.frame(
+  Adj.R2 = which.max(SUMRS6$adjr2),
+  CP = which.min(SUMRS6$cp),
+  BIC = which.min(SUMRS6$bic))
+summary(RS6)
+
+```
+
+```{r}
+#Team Data sets
+  #GS_mean Model TYPE 1 & 2
+RS7 <- regsubsets(GS_mean ~.-MATCH-UNI_mean-HS-AS-TEAM.x-WP,data=TWC_train_d, nbest=1, really.big = TRUE)
+RS8 <- regsubsets(GS_mean ~.-MATCH-UNI_mean-HS-AS-TEAM.x-S_mean-SG_mean-WP,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS7 <- summary(RS7)
+SUMRS8 <- summary(RS8)
+
+DS7 <- data.frame(
+  Adj.R2 = which.max(SUMRS7$adjr2),
+  CP = which.min(SUMRS7$cp),
+  BIC = which.min(SUMRS7$bic))
+summary(RS7)
+
+DS8 <- data.frame(
+  Adj.R2 = which.max(SUMRS8$adjr2),
+  CP = which.min(SUMRS8$cp),
+  BIC = which.min(SUMRS8$bic))
+summary(RS8)
+
+ #SG_mean Model TYPE 1 & 2
+RS9 <- regsubsets(SG_mean ~.-MATCH-UNI_mean-HS-AS-TEAM.x-WP-GS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+RS10 <- regsubsets(SG_mean ~.-MATCH-UNI_mean-HS-AS-TEAM.x-S_mean-GS_mean-WP,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS9 <- summary(RS9)
+SUMRS10 <- summary(RS10)
+
+DS9 <- data.frame(
+  Adj.R2 = which.max(SUMRS9$adjr2),
+  CP = which.min(SUMRS9$cp),
+  BIC = which.min(SUMRS9$bic))
+summary(RS9)
+
+DS10 <- data.frame(
+  Adj.R2 = which.max(SUMRS10$adjr2),
+  CP = which.min(SUMRS10$cp),
+  BIC = which.min(SUMRS10$bic))
+summary(RS10)
+
+ #HS Model TYPE 1 & 2
+RS11 <- regsubsets(HS ~.-MATCH-UNI_mean-AS-TEAM.x-WP-GS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+RS12 <- regsubsets(HS ~.-MATCH-UNI_mean-AS-TEAM.x-S_mean-GS_mean-WP,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS11 <- summary(RS11)
+SUMRS12 <- summary(RS12)
+
+DS11 <- data.frame(
+  Adj.R2 = which.max(SUMRS11$adjr2),
+  CP = which.min(SUMRS11$cp),
+  BIC = which.min(SUMRS11$bic))
+summary(RS11)
+
+DS12 <- data.frame(
+  Adj.R2 = which.max(SUMRS12$adjr2),
+  CP = which.min(SUMRS12$cp),
+  BIC = which.min(SUMRS12$bic))
+summary(RS12)
+
+#AS Model TYPE 1 & 2
+RS13 <- regsubsets(AS ~.-MATCH-UNI_mean-HS-TEAM.x-WP-GS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+RS14 <- regsubsets(AS ~.-MATCH-UNI_mean-HS-TEAM.x-S_mean-GS_mean-WP,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS13 <- summary(RS13)
+SUMRS14 <- summary(RS14)
+
+DS13 <- data.frame(
+  Adj.R2 = which.max(SUMRS13$adjr2),
+  CP = which.min(SUMRS13$cp),
+  BIC = which.min(SUMRS13$bic))
+summary(RS13)
+
+DS14 <- data.frame(
+  Adj.R2 = which.max(SUMRS14$adjr2),
+  CP = which.min(SUMRS14$cp),
+  BIC = which.min(SUMRS14$bic))
+summary(RS14)
+
+#PC Model TYPE 1
+RS15 <- regsubsets(PC_mean ~.-MATCH-UNI_mean-HS-TEAM.x-WP-PA_mean-PR_mean-'PC/PA_mean',data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS15 <- summary(RS15)
+
+DS15 <- data.frame(
+  Adj.R2 = which.max(SUMRS15$adjr2),
+  CP = which.min(SUMRS15$cp),
+  BIC = which.min(SUMRS15$bic))
+summary(RS15)
+
+#S_mean Model TYPE 1
+RS16 <- regsubsets(S_mean~.-MATCH-UNI_mean-HS-TEAM.x-WP-SG_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS16 <- summary(RS16)
+
+DS16 <- data.frame(
+  Adj.R2 = which.max(SUMRS16$adjr2),
+  CP = which.min(SUMRS16$cp),
+  BIC = which.min(SUMRS16$bic))
+summary(RS16)
+
+# DC_mean Model TYPE 1
+RS17 <- regsubsets(DC_mean~.-MATCH-UNI_mean-HS-TEAM.x-WP-D_IN_POSS_mean-D_NOT_IN_POS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS17 <- summary(RS17)
+
+DS17 <- data.frame(
+  Adj.R2 = which.max(SUMRS17$adjr2),
+  CP = which.min(SUMRS17$cp),
+  BIC = which.min(SUMRS17$bic))
+summary(RS17)
+
+# D_IN_POS_mean Model TYPE 1
+RS18 <- regsubsets(D_IN_POSS_mean~.-MATCH-UNI_mean-HS-TEAM.x-WP-DC_mean-D_NOT_IN_POS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS18 <- summary(RS18)
+
+DS18 <- data.frame(
+  Adj.R2 = which.max(SUMRS18$adjr2),
+  CP = which.min(SUMRS18$cp),
+  BIC = which.min(SUMRS18$bic))
+summary(RS18)
+
+# D_NOT_IN_POS_mean Model TYPE 1
+RS19 <- regsubsets(D_NOT_IN_POSS_mean~.-MATCH-UNI_mean-HS-TEAM.x-WP-DC_mean-D_IN_POS_mean,data=TWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS19 <- summary(RS19)
+
+DS19 <- data.frame(
+  Adj.R2 = which.max(SUMRS19$adjr2),
+  CP = which.min(SUMRS19$cp),
+  BIC = which.min(SUMRS19$bic))
+summary(RS19)
+```
+
+
+```{r}
+#LM models
+
+LM1 <- lm(GS~H_FORM+A_FORM+GKPositioning.x+Penalties.x+SprintSpeed.x+HeadingAccuracy.x+T_OPP_HALF+SG, data = PWC_train_d)
+
+LM21 <- lm(GS~A_FORM+Finishing.x+T_OPP_HALF+SG+S+PR+PA+POS, data =PWC18)
+```
+
+
+```{r}
+# Exhaustive model selection
+library(MuMIn)
+
+D1 <- lm(GS~.-MATCH-UNI-HS-AS-TEAM.x-WP, data = PWC18, na.action = na.fail)
+DD1 <- dredge(D1)
+
+#level 1 glmulti
+#LM1<-lm(GS ~.-MATCH-UNI-HS-AS,data=PWC18,na.action = "na.fail")
+#res <- dredge(LM1, trace=2)
+#subset(res, delta <= 2, recalc.weights=FALSE)
+```
+
+
+
+```{r}
+#Regsubsets
+library(leaps)
+
+  #GS Model TYPE 1 & 2
+RS1 <- regsubsets(GS ~.-MATCH-UNI-HS-AS-TEAM.x-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS2 <- regsubsets(GS ~.-MATCH-UNI-HS-AS-TEAM.x-S-SG-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS1 <- summary(RS1)
+SUMRS2 <- summary(RS2)
+
+DS1 <- data.frame(
+  Adj.R2 = which.max(SUMRS1$adjr2),
+  CP = which.min(SUMRS1$cp),
+  BIC = which.min(SUMRS1$bic))
+summary(RS1)
+
+DS2 <- data.frame(
+  Adj.R2 = which.max(SUMRS2$adjr2),
+  CP = which.min(SUMRS2$cp),
+  BIC = which.min(SUMRS2$bic))
+summary(RS2)
+
+ #SG Model TYPE 1 & 2
+RS3 <- regsubsets(SG ~.-MATCH-UNI-HS-AS-TEAM.x-WP-GS,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS4 <- regsubsets(SG ~.-MATCH-UNI-HS-AS-TEAM.x-S-GS-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS3 <- summary(RS3)
+SUMRS4 <- summary(RS4)
+
+DS3 <- data.frame(
+  Adj.R2 = which.max(SUMRS3$adjr2),
+  CP = which.min(SUMRS3$cp),
+  BIC = which.min(SUMRS3$bic))
+summary(RS3)
+
+DS4 <- data.frame(
+  Adj.R2 = which.max(SUMRS4$adjr2),
+  CP = which.min(SUMRS4$cp),
+  BIC = which.min(SUMRS4$bic))
+summary(RS4)
+
+ #HS Model TYPE 1 & 2
+RS5 <- regsubsets(HS ~.-MATCH-UNI-AS-TEAM.x-WP-GS,data=PWC_train_d, nbest=1, really.big = TRUE)
+RS6 <- regsubsets(HS ~.-MATCH-UNI-AS-TEAM.x-S-GS-WP,data=PWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS5 <- summary(RS5)
+SUMRS6 <- summary(RS6)
+
+DS5 <- data.frame(
+  Adj.R2 = which.max(SUMRS5$adjr2),
+  CP = which.min(SUMRS5$cp),
+  BIC = which.min(SUMRS5$bic))
+summary(RS5)
+DS6 <- data.frame(
+  Adj.R2 = which.max(SUMRS6$adjr2),
+  CP = which.min(SUMRS6$cp),
+  BIC = which.min(SUMRS6$bic))
+summary(RS6)
+
+```
+
+```{r}
+#Team Data sets
+  #GS_mean Model TYPE 1 & 2
+RS7 <- regsubsets(GS_mean ~.-MATCH-UNI_mean-H_SCORE-A_SCORE-TEAM.x-WP,data=MWC_train_d, nbest=1, really.big = TRUE)
+RS8 <- regsubsets(GS_mean ~.-MATCH-UNI_mean-H_SCORE-A_SCORE-TEAM.x-S_mean-SG_mean-WP,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS7 <- summary(RS7)
+SUMRS8 <- summary(RS8)
+
+DS7 <- data.frame(
+  Adj.R2 = which.max(SUMRS7$adjr2),
+  CP = which.min(SUMRS7$cp),
+  BIC = which.min(SUMRS7$bic))
+summary(RS7)
+
+DS8 <- data.frame(
+  Adj.R2 = which.max(SUMRS8$adjr2),
+  CP = which.min(SUMRS8$cp),
+  BIC = which.min(SUMRS8$bic))
+summary(RS8)
+
+ #SG_mean Model TYPE 1 & 2
+RS9 <- regsubsets(SG_mean ~.-MATCH-UNI_mean-H_SCORE-A_SCORE-TEAM.x-WP-GS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+RS10 <- regsubsets(SG_mean ~.-MATCH-UNI_mean-H_SCORE-A_SCORE-TEAM.x-S_mean-GS_mean-WP,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS9 <- summary(RS9)
+SUMRS10 <- summary(RS10)
+
+DS9 <- data.frame(
+  Adj.R2 = which.max(SUMRS9$adjr2),
+  CP = which.min(SUMRS9$cp),
+  BIC = which.min(SUMRS9$bic))
+summary(RS9)
+
+DS10 <- data.frame(
+  Adj.R2 = which.max(SUMRS10$adjr2),
+  CP = which.min(SUMRS10$cp),
+  BIC = which.min(SUMRS10$bic))
+summary(RS10)
+
+ #H_SCORE Model TYPE 1 & 2
+RS11 <- regsubsets(H_SCORE ~.-MATCH-UNI_mean-A_SCORE-TEAM.x-WP-GS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+RS12 <- regsubsets(H_SCORE ~.-MATCH-UNI_mean-A_SCORE-TEAM.x-S_mean-GS_mean-WP,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS11 <- summary(RS11)
+SUMRS12 <- summary(RS12)
+
+DS11 <- data.frame(
+  Adj.R2 = which.max(SUMRS11$adjr2),
+  CP = which.min(SUMRS11$cp),
+  BIC = which.min(SUMRS11$bic))
+summary(RS11)
+
+DS12 <- data.frame(
+  Adj.R2 = which.max(SUMRS12$adjr2),
+  CP = which.min(SUMRS12$cp),
+  BIC = which.min(SUMRS12$bic))
+summary(RS12)
+
+#A_SCORE Model TYPE 1 & 2
+RS13 <- regsubsets(A_SCORE ~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-GS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+RS14 <- regsubsets(A_SCORE ~.-MATCH-UNI_mean-H_SCORE-TEAM.x-S_mean-GS_mean-WP,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS13 <- summary(RS13)
+SUMRS14 <- summary(RS14)
+
+DS13 <- data.frame(
+  Adj.R2 = which.max(SUMRS13$adjr2),
+  CP = which.min(SUMRS13$cp),
+  BIC = which.min(SUMRS13$bic))
+summary(RS13)
+
+DS14 <- data.frame(
+  Adj.R2 = which.max(SUMRS14$adjr2),
+  CP = which.min(SUMRS14$cp),
+  BIC = which.min(SUMRS14$bic))
+summary(RS14)
+
+#PC Model TYPE 1
+RS15 <- regsubsets(PC_mean ~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-PA_mean-PR_mean-'PC/PA_mean',data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS15 <- summary(RS15)
+
+DS15 <- data.frame(
+  Adj.R2 = which.max(SUMRS15$adjr2),
+  CP = which.min(SUMRS15$cp),
+  BIC = which.min(SUMRS15$bic))
+summary(RS15)
+
+#S_mean Model TYPE 1
+RS16 <- regsubsets(S_mean~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-SG_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS16 <- summary(RS16)
+
+DS16 <- data.frame(
+  Adj.R2 = which.max(SUMRS16$adjr2),
+  CP = which.min(SUMRS16$cp),
+  BIC = which.min(SUMRS16$bic))
+summary(RS16)
+
+# DC_mean Model TYPE 1
+RS17 <- regsubsets(DC_mean~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-D_IN_POSS_mean-D_NOT_IN_POS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS17 <- summary(RS17)
+
+DS17 <- data.frame(
+  Adj.R2 = which.max(SUMRS17$adjr2),
+  CP = which.min(SUMRS17$cp),
+  BIC = which.min(SUMRS17$bic))
+summary(RS17)
+
+# D_IN_POS_mean Model TYPE 1
+RS18 <- regsubsets(D_IN_POSS_mean~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-DC_mean-D_NOT_IN_POS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS18 <- summary(RS18)
+
+DS18 <- data.frame(
+  Adj.R2 = which.max(SUMRS18$adjr2),
+  CP = which.min(SUMRS18$cp),
+  BIC = which.min(SUMRS18$bic))
+summary(RS18)
+
+# D_NOT_IN_POS_mean Model TYPE 1
+RS19 <- regsubsets(D_NOT_IN_POSS_mean~.-MATCH-UNI_mean-H_SCORE-TEAM.x-WP-DC_mean-D_IN_POS_mean,data=MWC_train_d, nbest=1, really.big = TRUE)
+
+SUMRS19 <- summary(RS19)
+
+DS19 <- data.frame(
+  Adj.R2 = which.max(SUMRS19$adjr2),
+  CP = which.min(SUMRS19$cp),
+  BIC = which.min(SUMRS19$bic))
+summary(RS19)
+```
+
+
+```{r}
+#LM models
+
+LM1 <- lm(GS~H_FORM+A_FORM+GKPositioning.x+Penalties.x+SprintSpeed.x+HeadingAccuracy.x+T_OPP_HALF+SG, data = PWC_train_d)
+
+LM21 <- lm(GS~A_FORM+Finishing.x+T_OPP_HALF+SG+S+PR+PA+POS, data =PWC18)
+```

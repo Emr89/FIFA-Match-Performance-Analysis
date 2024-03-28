@@ -1,0 +1,311 @@
+---
+title: "FIFA PCA SETUP"
+author: "Eric Rupinski"
+date: "2022-08-19"
+output: html_document
+---
+
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/T123.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude()%>% rename(., PCPA_mean = 'PC/PA_mean')%>% rename(., APCPA_mean = 'A_PC/PA_mean') %>% select(., -UNI_mean,-A_UNI_mean)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+
+#Subsets:
+#S1, Wihtout Shots on goal,Shot, Win Probability, or any Score Value
+S1PWC18<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS,-MATCH)
+S1PWC18_preProcValues1 <- preProcess(S1PWC18, method = c("center","scale","YeoJohnson"))
+S1PWC18_train_d <- predict(S1PWC18_preProcValues1, S1PWC18)
+
+S1PWC18A<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS,-MATCH)
+
+#S2, Without Goals score ,Shot, Win Probability, or any Score Value
+S2PWC18<- PWC18 %>% select(., -GS,-S,-WP,-HS,-AS,-MATCH)
+S2PWC18_preProcValues1 <- preProcess(S2PWC18, method = c("center","scale","YeoJohnson"))
+S2PWC18_train_d <- predict(S2PWC18_preProcValues1, S2PWC18)
+
+#S3 Without Goals score ,Shot, Win Probability, or any Score Value
+S3PWC18<- PWC18 %>% select(., -SG,-GS,-WP,-HS,-AS,-MATCH)
+S3PWC18_preProcValues1 <- preProcess(S3PWC18, method = c("center","scale","YeoJohnson"))
+S3PWC18_train_d <- predict(S3PWC18_preProcValues1, S3PWC18)
+
+#S4 Without components making up PCPA
+S4PWC18<- PWC18 %>% select(., -PC,-PA,-PR,-WP,-HS,-AS,-MATCH)
+S4PWC18_preProcValues1 <- preProcess(S4PWC18, method = c("center","scale","YeoJohnson"))
+S4PWC18_train_d <- predict(S4PWC18_preProcValues1, S4PWC18)
+
+#S5 Without components making up Distance Covered
+S5PWC18<- PWC18 %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S5PWC18_preProcValues1 <- preProcess(S5PWC18, method = c("center","scale","YeoJohnson"))
+S5PWC18_train_d <- predict(S5PWC18_preProcValues1, S5PWC18)
+
+#S6 DC_NOT_IN_POS focused
+S6PWC18<- PWC18 %>% select(., -DC,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S6PWC18_preProcValues1 <- preProcess(S6PWC18, method = c("center","scale","YeoJohnson"))
+S6PWC18_train_d <- predict(S6PWC18_preProcValues1, S6PWC18)
+
+#S7 DC_IN_POS focused
+S7PWC18<- PWC18 %>% select(., -DC,-D_NOT_IN_POSS,-WP,-HS,-AS,-MATCH)
+S7PWC18_preProcValues1 <- preProcess(S7PWC18, method = c("center","scale","YeoJohnson"))
+S7PWC18_train_d <- predict(S7PWC18_preProcValues1, S7PWC18)
+
+#Game Data Set 
+
+#S1 WP subset
+S1MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH)
+S1MWC18_preProcValues1 <- preProcess(S1MWC18, method = c("center","scale","YeoJohnson"))
+S1MWC18_train_d <- predict(S1MWC18_preProcValues1, S1MWC18)
+
+#S2 HS subset
+S2MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-WP)
+S2MWC18_preProcValues1 <- preProcess(S2MWC18, method = c("center","scale","YeoJohnson"))
+S2MWC18_train_d <- predict(S2MWC18_preProcValues1, S2MWC18)
+
+#S3 AS subset
+S3MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-WP)
+S3MWC18_preProcValues1 <- preProcess(S3MWC18, method = c("center","scale","YeoJohnson"))
+S3MWC18_train_d <- predict(S3MWC18_preProcValues1, S3MWC18)
+
+#S4 PCPA subset
+S4MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S4MWC18_preProcValues1 <- preProcess(S4MWC18, method = c("center","scale","YeoJohnson"))
+S4MWC18_train_d <- predict(S4MWC18_preProcValues1, S4MWC18)
+
+#S5 PCPA subset 2
+S5MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-WP)
+S5MWC18_preProcValues1 <- preProcess(S5MWC18, method = c("center","scale","YeoJohnson"))
+S5MWC18_train_d <- predict(S5MWC18_preProcValues1, S5MWC18)
+
+#S6 GS_mean
+S6MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S6MWC18_preProcValues1 <- preProcess(S6MWC18, method = c("center","scale","YeoJohnson"))
+S6MWC18_train_d <- predict(S6MWC18_preProcValues1, S6MWC18)
+
+#S7 GS_mean
+S7MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S7MWC18_preProcValues1 <- preProcess(S7MWC18, method = c("center","scale","YeoJohnson"))
+S7MWC18_train_d <- predict(S7MWC18_preProcValues1, S7MWC18)
+
+#S8 SG_mean 1
+S8MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S8MWC18_preProcValues1 <- preProcess(S8MWC18, method = c("center","scale","YeoJohnson"))
+S8MWC18_train_d <- predict(S8MWC18_preProcValues1, S8MWC18)
+
+#S9 SG_mean 2
+S9MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S9MWC18_preProcValues1 <- preProcess(S9MWC18, method = c("center","scale","YeoJohnson"))
+S9MWC18_train_d <- predict(S9MWC18_preProcValues1, S9MWC18)
+
+#S10 DC 1 
+S10MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S10MWC18_preProcValues1 <- preProcess(S10MWC18, method = c("center","scale","YeoJohnson"))
+S10MWC18_train_d <- predict(S10MWC18_preProcValues1, S10MWC18)
+
+#S11 DC 2
+S11MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S11MWC18_preProcValues1 <- preProcess(S11MWC18, method = c("center","scale","YeoJohnson"))
+S11MWC18_train_d <- predict(S11MWC18_preProcValues1, S11MWC18)
+
+#S12 DC_IN_POS
+S12MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S12MWC18_preProcValues1 <- preProcess(S12MWC18, method = c("center","scale","YeoJohnson"))
+S12MWC18_train_d <- predict(S12MWC18_preProcValues1, S12MWC18)
+
+#S13 DC_IN_POS 2
+S13MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S13MWC18_preProcValues1 <- preProcess(S13MWC18, method = c("center","scale","YeoJohnson"))
+S13MWC18_train_d <- predict(S13MWC18_preProcValues1, S13MWC18)
+
+#S14 DC_NOT_IN_POS
+S14MWC18<- MWC18 %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S14MWC18_preProcValues1 <- preProcess(S14MWC18, method = c("center","scale","YeoJohnson"))
+S14MWC18_train_d <- predict(S14MWC18_preProcValues1, S14MWC18)
+
+#S15 T_OPP_HALF_mean
+S15MWC18<- MWC18 %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S15MWC18_preProcValues1 <- preProcess(S15MWC18, method = c("center","scale","YeoJohnson"))
+S15MWC18_train_d <- predict(S15MWC18_preProcValues1, S15MWC18)
+
+#S16 T_PEN_AREA_mean
+S16MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S16MWC18_preProcValues1 <- preProcess(S16MWC18, method = c("center","scale","YeoJohnson"))
+S16MWC18_train_d <- predict(S16MWC18_preProcValues1, S16MWC18)
+
+#S17 T_ATT_3RD_mean
+S17MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S17MWC18_preProcValues1 <- preProcess(S17MWC18, method = c("center","scale","YeoJohnson"))
+S17MWC18_train_d <- predict(S17MWC18_preProcValues1, S17MWC18)
+
+
+
+
+
+#Converting Variables:
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#Transforming Data sets:
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+```
+
+```{r}
+#PCA Analysis:
+#Personal Data Set:
+  #GS
+PWC_preProc_1 <- preProcess(PWC_train_d[,-9],method="pca",thresh = 0.85)
+PWC_trainPC_1 <- predict(PWC_preProc_1,PWC_train_d[,-9])
+
+  #GS TYPE 2 
+S1PWC18_preProc_1 <- preProcess(S1PWC18_train_d[,-8],method="pca",thresh = 0.85)
+S1PWC18_trainPC_1 <- predict(S1PWC18_preProc_1,S1PWC18_train_d[,-8])
+
+#SG 
+PWC_preProc_2 <- preProcess(PWC_train_d[,-11],method="pca",thresh = 0.85)
+PWC_trainPC_2 <- predict(PWC_preProc_2,PWC_train_d[,-11])
+
+#SG TYPE 2 
+S2PWC18_preProc_1 <- preProcess(S2PWC18_train_d[,-8],method="pca",thresh = 0.85)
+S2PWC18_trainPC_1 <- predict(S2PWC18_preProc_1,S2PWC18_train_d[,-8])
+
+#HS 
+PWC_preProc_3 <- preProcess(PWC_train_d[,-69],method="pca",thresh = 0.85)
+PWC_trainPC_3 <- predict(PWC_preProc_3,PWC_train_d[,-69])
+
+#S 
+S3PWC18_preProc_1 <- preProcess(S3PWC18_train_d[,-8],method="pca",thresh = 0.85)
+S3PWC18_trainPC_1 <- predict(S3PWC18_preProc_1,S3PWC18_train_d[,-8])
+
+#PCPA
+S4PWC18_preProc_1 <- preProcess(S4PWC18_train_d[,-3],method="pca",thresh = 0.85)
+S4PWC18_trainPC_1 <- predict(S4PWC18_preProc_1,S4PWC18_train_d[,-3])
+
+#DC
+S5PWC18_preProc_1 <- preProcess(S5PWC18_train_d[,-13],method="pca",thresh = 0.85)
+S5PWC18_trainPC_1 <- predict(S5PWC18_preProc_1,S5PWC18_train_d[,-13])
+
+#DC NOT IN POS
+S6PWC18_preProc_1 <- preProcess(S6PWC18_train_d[,-13],method="pca",thresh = 0.85)
+S6PWC18_trainPC_1 <- predict(S6PWC18_preProc_1,S6PWC18_train_d[,-13])
+
+#DC IN POS
+S7PWC18_preProc_1 <- preProcess(S7PWC18_train_d[,-13],method="pca",thresh = 0.85)
+S7PWC18_trainPC_1 <- predict(S7PWC18_preProc_1,S7PWC18_train_d[,-13])
+
+#Game data set:
+
+#WP
+S1MWC18_preProc_1 <- preProcess(S1MWC18_train_d[,-127],method="pca",thresh = 0.85)
+S1MWC18_trainPC_1 <- predict(S1MWC18_preProc_1,S1MWC18_train_d[,-127])
+
+#H_SCORE
+S2MWC18_preProc_1 <- preProcess(S2MWC18_train_d[,-123],method="pca",thresh = 0.85)
+S2MWC18_trainPC_1 <- predict(S2MWC18_preProc_1,S2MWC18_train_d[,-123])
+
+#A_SCORE
+S3MWC18_preProc_1 <- preProcess(S3MWC18_train_d[,-123],method="pca",thresh = 0.85)
+S3MWC18_trainPC_1 <- predict(S3MWC18_preProc_1,S3MWC18_train_d[,-123])
+
+#PCPA_mean
+S4MWC18_preProc_1 <- preProcess(S4MWC18_train_d[,-1],method="pca",thresh = 0.85)
+S4MWC18_trainPC_1 <- predict(S4MWC18_preProc_1,S4MWC18_train_d[,-1])
+
+#PCPA_mean 2
+S5MWC18_preProc_1 <- preProcess(S5MWC18_train_d[,-1],method="pca",thresh = 0.85)
+S5MWC18_trainPC_1 <- predict(S5MWC18_preProc_1,S5MWC18_train_d[,-1])
+
+#GS_mean
+S6MWC18_preProc_1 <- preProcess(S6MWC18_train_d[,-6],method="pca",thresh = 0.85)
+S6MWC18_trainPC_1 <- predict(S6MWC18_preProc_1,S6MWC18_train_d[,-6])
+
+#GS_mean 2
+S7MWC18_preProc_1 <- preProcess(S7MWC18_train_d[,-6],method="pca",thresh = 0.85)
+S7MWC18_trainPC_1 <- predict(S7MWC18_preProc_1,S7MWC18_train_d[,-6])
+
+#SG_mean 
+S8MWC18_preProc_1 <- preProcess(S8MWC18_train_d[,-6],method="pca",thresh = 0.85)
+S8MWC18_trainPC_1 <- predict(S8MWC18_preProc_1,S8MWC18_train_d[,-6])
+
+
+#SG_mean 2
+S9MWC18_preProc_1 <- preProcess(S9MWC18_train_d[,-8],method="pca",thresh = 0.85)
+S9MWC18_trainPC_1 <- predict(S9MWC18_preProc_1,S9MWC18_train_d[,-8])
+
+#DC_mean
+S10MWC18_preProc_1 <- preProcess(S10MWC18_train_d[,-11],method="pca",thresh = 0.85)
+S10MWC18_trainPC_1 <- predict(S10MWC18_preProc_1,S10MWC18_train_d[,-11])
+
+#DC_mean 2
+S11MWC18_preProc_1 <- preProcess(S11MWC18_train_d[,-11],method="pca",thresh = 0.85)
+S11MWC18_trainPC_1 <- predict(S11MWC18_preProc_1,S11MWC18_train_d[,-11])
+
+#DC_IN_POS 
+S12MWC18_preProc_1 <- preProcess(S12MWC18_train_d[,-11],method="pca",thresh = 0.85)
+S12MWC18_trainPC_1 <- predict(S12MWC18_preProc_1,S12MWC18_train_d[,-11])
+
+#DC_IN_POS 
+S13MWC18_preProc_1 <- preProcess(S13MWC18_train_d[,-11],method="pca",thresh = 0.85)
+S13MWC18_trainPC_1 <- predict(S13MWC18_preProc_1,S13MWC18_train_d[,-11])
+
+#DC_NOT_IN_POS 
+S14MWC18_preProc_1 <- preProcess(S14MWC18_train_d[,-11],method="pca",thresh = 0.85)
+S14MWC18_trainPC_1 <- predict(S14MWC18_preProc_1,S14MWC18_train_d[,-11])
+
+#T_OPP_HALF
+S15MWC18_preProc_1 <- preProcess(S15MWC18_train_d[,-14],method="pca",thresh = 0.85)
+S15MWC18_trainPC_1 <- predict(S15MWC18_preProc_1,S15MWC18_train_d[,-14])
+
+#T_PEN_AREA
+S16MWC18_preProc_1 <- preProcess(S16MWC18_train_d[,-14],method="pca",thresh = 0.85)
+S16MWC18_trainPC_1 <- predict(S16MWC18_preProc_1,S16MWC18_train_d[,-14])
+
+#T_ATT_3RD
+S17MWC18_preProc_1 <- preProcess(S17MWC18_train_d[,-14],method="pca",thresh = 0.85)
+S17MWC18_trainPC_1 <- predict(S17MWC18_preProc_1,S17MWC18_train_d[,-14])
+
+```

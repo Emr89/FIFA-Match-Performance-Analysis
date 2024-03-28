@@ -1,0 +1,353 @@
+---
+title: "FIFA RF VAR SELECTION"
+author: "Eric Rupinski"
+date: "2022-08-21"
+output: word_document
+---
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+
+I_SCORE_FUNC <- function(RF_TEST){
+i_scores <- varImp(RF_TEST ,conditional=TRUE)
+#Gathering rownames in 'var'  and converting it to the factor
+#to provide 'fill' parameter for the bar chart. 
+i_scores <- i_scores %>% tibble::rownames_to_column("var") 
+i_scores$var<- i_scores$var %>% as.factor()
+#Plotting the bar and polar charts for comparing variables
+i_bar <- ggplot(data = i_scores) + 
+  geom_bar(
+    stat = "identity",#it leaves the data without count and bin
+    mapping = aes(x = var, y=Overall, fill = var), 
+    show.legend = FALSE,
+    width = 1
+  ) + 
+  labs(x = NULL, y = NULL)
+i_bar + coord_polar() + theme_minimal()
+i_bar + coord_flip() + theme_minimal()
+}
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/CMWC.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude() %>% select(., -UNI_mean,-A_UNI_mean, - TEAM.x_H,-TEAM.x_A)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+#Converting Variables:
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#Subsets:
+S1PWC18<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS,-MATCH)
+S1PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S2PWC18<- PWC18 %>% select(., -GS,-S,-WP,-HS,-AS,-MATCH)
+S2PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S3PWC18<- PWC18 %>% select(.,-WP,-AS,-MATCH)
+S4PWC18<- PWC18 %>% select(.,-WP,-HS,-MATCH)
+S5PWC18<- PWC18 %>% select(., -PC,-PA,-PR,-WP,-HS,-AS,-MATCH)
+S6PWC18<- PWC18 %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S7PWC18<- PWC18 %>% select(., -DC,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S8PWC18<- PWC18 %>% select(., -DC,-D_NOT_IN_POSS,-WP,-HS,-AS,-MATCH)
+
+#Game Data Set 
+
+#S1 WP subset
+S1MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH)
+S2MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-WP)
+S3MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-WP)
+S4MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S5MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-WP)
+S6MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S7MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S8MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S9MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S10MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S11MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S12MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S13MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S14MWC18<- MWC18 %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S15MWC18<- MWC18 %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S16MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S17MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+
+```
+
+
+```{r}
+#Transforming Data sets:
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+```
+
+```{r}
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+
+
+```
+
+
+```{r}
+#Random Forest:
+LMPRO1<-rfe(x=S1PWC18[,-8],y=S1PWC18$GS,rfeControl=ctrl)
+LMPRO2<-rfe(x=S1PWC18A[,-8],y=S1PWC18A$GS,rfeControl=ctrl)
+LMPRO3<-rfe(x=S2PWC18[,-8],y=S2PWC18$SG,rfeControl=ctrl)
+LMPRO4<-rfe(x=S2PWC18A[,-10],y=S2PWC18A$SG,rfeControl=ctrl)
+LMPRO5<-rfe(x=S3PWC18[,-67],y=S3PWC18$HS,rfeControl=ctrl)
+LMPRO6<-rfe(x=S4PWC18[,-67],y=S4PWC18$AS,rfeControl=ctrl)
+LMPRO7<-rfe(x=S5PWC18[,-3],y=S5PWC18$PCPA,rfeControl=ctrl)
+LMPRO8<-rfe(x=S6PWC18[,-13],y=S6PWC18$DC,rfeControl=ctrl)
+LMPRO9<-rfe(x=S7PWC18[,-13],y=S7PWC18$D_NOT_IN_POSS,rfeControl=ctrl)
+LMPRO10<-rfe(x=S8PWC18[,-13],y=S8PWC18$D_IN_POSS,rfeControl=ctrl)
+LMPRO11<-rfe(x=S1MWC18[,-127],y=S1MWC18$WP,rfeControl=ctrl)
+LMPRO12<-rfe(x=S2MWC18[,-123],y=S2MWC18$H_SCORE,rfeControl=ctrl)
+LMPRO13<-rfe(x=S3MWC18[,-123],y=S3MWC18$A_SCORE,rfeControl=ctrl)
+LMPRO14<-rfe(x=S4MWC18[,-1],y=S4MWC18$PCPA_mean,rfeControl=ctrl)
+LMPRO15<-rfe(x=S5MWC18[,-1],y=S5MWC18$PCPA_mean,rfeControl=ctrl)
+LMPRO16<-rfe(x=S6MWC18[,-6],y=S6MWC18$GS_mean,rfeControl=ctrl)
+LMPRO17<-rfe(x=S7MWC18[,-6],y=S7MWC18$GS_mean,rfeControl=ctrl)
+LMPRO18<-rfe(x=S8MWC18[,-6],y=S8MWC18$SG_mean,rfeControl=ctrl)
+LMPRO19<-rfe(x=S9MWC18[,-8],y=S9MWC18$SG_mean,rfeControl=ctrl)
+LMPRO20<-rfe(x=S10MWC18[,-11],y=S10MWC18$DC_mean,rfeControl=ctrl)
+LMPRO21<-rfe(x=S11MWC18[,-11],y=S11MWC18$DC_mean,rfeControl=ctrl)
+LMPRO22<-rfe(x=S12MWC18[,-11],y=S12MWC18$D_IN_POSS_mean,rfeControl=ctrl)
+LMPRO23<-rfe(x=S13MWC18[,-11],y=S13MWC18$D_IN_POSS_mean,rfeControl=ctrl)
+LMPRO24<-rfe(x=S14MWC18[,-11],y=S14MWC18$D_NOT_IN_POSS_mean,rfeControl=ctrl)
+LMPRO25<-rfe(x=S15MWC18[,-14],y=S15MWC18$T_OPP_HALF_mean,rfeControl=ctrl)
+LMPRO26<-rfe(x=S16MWC18[,-14],y=S16MWC18$T_PEN_AREA_mean,rfeControl=ctrl)
+LMPRO27<-rfe(x=S17MWC18[,-14],y=S17MWC18$T_ATT_3RD_mean,rfeControl=ctrl)
+
+```
+
+```{r}
+#Random Forest:
+PCPRO1<-rfe(x=S1PWC18[,-8],y=S1PWC18$GS,rfeControl=ctrl, preProcess = "pca")
+PCPRO2<-rfe(x=S1PWC18A[,-8],y=S1PWC18A$GS,rfeControl=ctrl, preProcess = "pca")
+PCPRO3<-rfe(x=S2PWC18[,-8],y=S2PWC18$SG,rfeControl=ctrl, preProcess = "pca")
+PCPRO4<-rfe(x=S2PWC18A[,-10],y=S2PWC18A$SG,rfeControl=ctrl, preProcess = "pca")
+PCPRO5<-rfe(x=S3PWC18[,-67],y=S3PWC18$HS,rfeControl=ctrl, preProcess = "pca")
+PCPRO6<-rfe(x=S4PWC18[,-67],y=S4PWC18$AS,rfeControl=ctrl, preProcess = "pca")
+PCPRO7<-rfe(x=S5PWC18[,-3],y=S5PWC18$PCPA,rfeControl=ctrl, preProcess = "pca")
+PCPRO8<-rfe(x=S6PWC18[,-13],y=S6PWC18$DC,rfeControl=ctrl, preProcess = "pca")
+PCPRO9<-rfe(x=S7PWC18[,-13],y=S7PWC18$D_NOT_IN_POSS,rfeControl=ctrl, preProcess = "pca")
+PCPRO10<-rfe(x=S8PWC18[,-13],y=S8PWC18$D_IN_POSS,rfeControl=ctrl, preProcess = "pca")
+PCPRO11<-rfe(x=S1MWC18[,-127],y=S1MWC18$WP,rfeControl=ctrl, preProcess = "pca")
+PCPRO12<-rfe(x=S2MWC18[,-123],y=S2MWC18$H_SCORE,rfeControl=ctrl, preProcess = "pca")
+PCPRO13<-rfe(x=S3MWC18[,-123],y=S3MWC18$A_SCORE,rfeControl=ctrl, preProcess = "pca")
+PCPRO14<-rfe(x=S4MWC18[,-1],y=S4MWC18$PCPA_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO15<-rfe(x=S5MWC18[,-1],y=S5MWC18$PCPA_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO16<-rfe(x=S6MWC18[,-6],y=S6MWC18$GS_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO17<-rfe(x=S7MWC18[,-6],y=S7MWC18$GS_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO18<-rfe(x=S8MWC18[,-6],y=S8MWC18$SG_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO19<-rfe(x=S9MWC18[,-8],y=S9MWC18$SG_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO20<-rfe(x=S10MWC18[,-11],y=S10MWC18$DC_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO21<-rfe(x=S11MWC18[,-11],y=S11MWC18$DC_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO22<-rfe(x=S12MWC18[,-11],y=S12MWC18$D_IN_POSS_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO23<-rfe(x=S13MWC18[,-11],y=S13MWC18$D_IN_POSS_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO24<-rfe(x=S14MWC18[,-11],y=S14MWC18$D_NOT_IN_POSS_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO25<-rfe(x=S15MWC18[,-14],y=S15MWC18$T_OPP_HALF_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO26<-rfe(x=S16MWC18[,-14],y=S16MWC18$T_PEN_AREA_mean,rfeControl=ctrl, preProcess = "pca")
+PCPRO27<-rfe(x=S17MWC18[,-14],y=S17MWC18$T_ATT_3RD_mean,rfeControl=ctrl, preProcess = "pca")
+```
+
+
+```{r}
+# Summary
+
+#Specific Variables:
+LMPRO1$variables
+LMPRO2$variables
+LMPRO3$variables
+LMPRO4$variables
+LMPRO5$variables
+LMPRO6$variables
+LMPRO7$variables
+LMPRO8$variables
+LMPRO9$variables
+LMPRO10$variables
+LMPRO11$variables
+LMPRO12$variables
+LMPRO13$variables
+LMPRO14$variables
+LMPRO15$variables
+LMPRO16$variables
+LMPRO17$variables
+LMPRO18$variables
+LMPRO19$variables
+LMPRO20$variables
+LMPRO21$variables
+LMPRO22$variables
+LMPRO23$variables
+LMPRO24$variables
+LMPRO25$variables
+LMPRO26$variables
+LMPRO27$variables
+
+
+LMPRO1
+LMPRO2
+LMPRO3
+LMPRO4
+LMPRO5
+LMPRO6
+LMPRO7
+LMPRO8
+LMPRO9
+LMPRO10
+LMPRO11
+LMPRO12
+LMPRO13
+LMPRO14
+LMPRO15
+LMPRO16
+LMPRO17
+LMPRO18
+LMPRO19
+LMPRO20
+LMPRO21
+LMPRO22
+LMPRO23
+LMPRO24
+LMPRO25
+LMPRO26
+LMPRO27
+
+
+PCPRO1
+PCPRO2
+PCPRO3
+PCPRO4
+PCPRO5
+PCPRO6
+PCPRO7
+PCPRO8
+PCPRO9
+PCPRO10
+PCPRO11
+PCPRO12
+PCPRO13
+PCPRO14
+PCPRO15
+PCPRO16
+PCPRO17
+PCPRO18
+PCPRO19
+PCPRO20
+PCPRO21
+PCPRO22
+PCPRO23
+PCPRO24
+PCPRO25
+PCPRO26
+PCPRO27
+
+I_SCORE_FUNC(LMPRO1)
+I_SCORE_FUNC(LMPRO2)
+I_SCORE_FUNC(LMPRO3)
+I_SCORE_FUNC(LMPRO4)
+I_SCORE_FUNC(LMPRO5)
+I_SCORE_FUNC(LMPRO6)
+I_SCORE_FUNC(LMPRO7)
+I_SCORE_FUNC(LMPRO8)
+I_SCORE_FUNC(LMPRO9)
+I_SCORE_FUNC(LMPRO10)
+I_SCORE_FUNC(LMPRO11)
+I_SCORE_FUNC(LMPRO12)
+I_SCORE_FUNC(LMPRO13)
+I_SCORE_FUNC(LMPRO14)
+I_SCORE_FUNC(LMPRO15)
+I_SCORE_FUNC(LMPRO16)
+I_SCORE_FUNC(LMPRO17)
+I_SCORE_FUNC(LMPRO18)
+I_SCORE_FUNC(LMPRO19)
+I_SCORE_FUNC(LMPRO20)
+I_SCORE_FUNC(LMPRO21)
+I_SCORE_FUNC(LMPRO22)
+I_SCORE_FUNC(LMPRO23)
+I_SCORE_FUNC(LMPRO24)
+I_SCORE_FUNC(LMPRO25)
+I_SCORE_FUNC(LMPRO26)
+I_SCORE_FUNC(LMPRO27)
+I_SCORE_FUNC(PCPRO1)
+I_SCORE_FUNC(PCPRO2)
+I_SCORE_FUNC(PCPRO3)
+I_SCORE_FUNC(PCPRO4)
+I_SCORE_FUNC(PCPRO5)
+I_SCORE_FUNC(PCPRO6)
+I_SCORE_FUNC(PCPRO7)
+I_SCORE_FUNC(PCPRO8)
+I_SCORE_FUNC(PCPRO9)
+I_SCORE_FUNC(PCPRO10)
+I_SCORE_FUNC(PCPRO11)
+I_SCORE_FUNC(PCPRO12)
+I_SCORE_FUNC(PCPRO13)
+I_SCORE_FUNC(PCPRO14)
+I_SCORE_FUNC(PCPRO15)
+I_SCORE_FUNC(PCPRO16)
+I_SCORE_FUNC(PCPRO17)
+I_SCORE_FUNC(PCPRO18)
+I_SCORE_FUNC(PCPRO19)
+I_SCORE_FUNC(PCPRO20)
+I_SCORE_FUNC(PCPRO21)
+I_SCORE_FUNC(PCPRO22)
+I_SCORE_FUNC(PCPRO23)
+I_SCORE_FUNC(PCPRO24)
+I_SCORE_FUNC(PCPRO25)
+I_SCORE_FUNC(PCPRO26)
+I_SCORE_FUNC(PCPRO27)
+
+## When you are done:
+stopCluster(cl)
+
+```
+

@@ -1,0 +1,64 @@
+---
+title: "Fifa Proj P1"
+author: "Eric Rupinski"
+date: '2022-08-15'
+output: html_document
+---
+
+```{r}
+#Loading Data Sets
+library(readxl)
+library(tidyverse)
+library(udpipe)
+library(writexl)
+AFIFA <- read_excel("~/Desktop/AFIFA.xlsx")
+FIFA <- read.csv("~/Desktop/Soccer Work/FIFA.csv")
+X2018WCData <- read_excel("~/Desktop/2018WCData.xlsx")
+Goalie <- read_excel("~/Desktop/Goalie.xlsx")
+
+#Clean Data
+WC18 <- na.exclude(X2018WCData)
+#Creating Modified AFIFA
+S_FIFA <- FIFA[,c(2,23)]
+
+# Data set with Jersey Numbers
+AFIFA_1 <- AFIFA %>% left_join(S_FIFA, by="ID")
+AFIFA_1$PLAYER <- AFIFA_1$Jersey.Number
+
+
+#Creating UNI system
+WC18<- WC18 %>% mutate(UNI= unique_identifier(., fields = c("TEAM", "PLAYER")))
+
+#Scrap to see reference number
+ST <- WC18 %>% select(.,NAME,UNI,TEAM,POS) %>% filter(POS=="GK")
+#Create DS2
+WC2018 <- WC18 %>% left_join(AFIFA_1, by ="UNI") %>% left_join(Goalie, by="UNI") %>% select(.,-PLAYER.x,-NAME,-(ID.x:TEAM.y),-(Club.x:Special.x),-InternationalReputation,-Position.x,-Height.x,-(LS.x:RB.x),-(Jersey.Number:Nationality),-(Club.y:Special.y),-(Position.y:Height.y),-(LS.y:RB.y)) %>% rename(.,RC = 'Release Clause') %>% rename(., RF = 'Real Face') %>%rename(., IR='International Reputation') %>%select(., -RF,-RC,-IR)
+
+
+write_xlsx(WC2018,"/Users/emr/Desktop/WC2018.xlsx")
+
+P_WC18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx")
+
+PC_WC18 <- na.exclude(P_WC18)
+
+
+#Creating new data set
+T_WC18 <- PC_WC18 %>% group_by(MATCH,TEAM.x) %>% summarise_all(.funs = c(mean="mean"))
+print(T_WC18)
+
+
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+TEAMWC18 <- read_excel("~/Desktop/TEAMWC18.xlsx")
+
+
+
+TEAMWC18 <- TEAMWC18 %>% select(.,-POS_mean,-`Preferred Foot.x_mean`,-WorkRate_mean,)
+
+MATCHWC18 <- TEAMWC18 %>% pivot_wider(names_from = TEAM.x, values_from = c(PC_mean:GKReflexes.x_mean))
+
+#write_xlsx(AE_FORM,"/Users/emr/Desktop/AEFORM.xlsx")
+
+AE_FORM <- E_FORM %>% select(.,-AS,-A_FORM) %>% pivot_wider(names_from = TEAM.x, values_from = c(HS,H_FORM))
+
+```
+

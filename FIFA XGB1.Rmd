@@ -1,0 +1,274 @@
+---
+title: "FIFA XGB1"
+author: "Eric Rupinski"
+date: "2022-08-22"
+output: word_document
+---
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+library(xgboost)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/CMWC.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude() %>% select(., -UNI_mean,-A_UNI_mean, - TEAM.x_H,-TEAM.x_A)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+#Converting Variables:
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#Subsets:
+S1PWC18<- PWC18 %>% select(., -SG,-S,-WP,-HS,-AS,-MATCH)
+S1PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S2PWC18<- PWC18 %>% select(., -GS,-S,-WP,-HS,-AS,-MATCH)
+S2PWC18A<- PWC18 %>% select(.,-WP,-HS,-AS,-MATCH)
+S3PWC18<- PWC18 %>% select(.,-WP,-AS,-MATCH)
+S4PWC18<- PWC18 %>% select(.,-WP,-HS,-MATCH)
+S5PWC18<- PWC18 %>% select(., -PC,-PA,-PR,-WP,-HS,-AS,-MATCH)
+S6PWC18<- PWC18 %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S7PWC18<- PWC18 %>% select(., -DC,-D_IN_POSS,-WP,-HS,-AS,-MATCH)
+S8PWC18<- PWC18 %>% select(., -DC,-D_NOT_IN_POSS,-WP,-HS,-AS,-MATCH)
+
+#Game Data Set 
+
+#S1 WP subset
+S1MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH)
+S2MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-A_SCORE,-MATCH,-WP)
+S3MWC18<- MWC18 %>% select(.,-GS_mean,-A_GS_mean,-H_SCORE,-MATCH,-WP)
+S4MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S5MWC18<- MWC18 %>% select(.,-PC_mean,-PA_mean,-PR_mean,-A_PC_mean,-A_PR_mean,-A_PA_mean,-MATCH,-WP)
+S6MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-SG_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S7MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S8MWC18<- MWC18 %>% select(.,-S_mean,-A_S_mean,-GS_mean,-A_GS_mean,-A_SG_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S9MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S10MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-A_DC_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S11MWC18<- MWC18 %>% select(.,-D_IN_POSS_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S12MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S13MWC18<- MWC18 %>% select(.,-DC_mean,-D_NOT_IN_POSS_mean,-A_D_IN_POSS_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S14MWC18<- MWC18 %>% select(.,-DC_mean,-D_IN_POSS_mean,-A_D_IN_POSS_mean,-A_DC_mean,-A_D_NOT_IN_POSS_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S15MWC18<- MWC18 %>% select(.,-T_PEN_AREA_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S16MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_ATT_3RD_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+S17MWC18<- MWC18 %>% select(.,-T_OPP_HALF_mean,-T_PEN_AREA_mean,-A_T_OPP_HALF_mean,-A_T_PEN_AREA_mean,-A_T_ATT_3RD_mean,-H_SCORE,-A_SCORE,-MATCH,-WP)
+
+```
+
+
+```{r}
+#Transforming Data sets:
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+```
+
+```{r}
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+
+#Creating Tuning Grid
+# Looking at nrounds, eta, gamma, and max depth first
+TG1 <- expand.grid(nrounds=c(200,300),eta = c(0.01),gamma = c(0),max_depth = c(6),min_child_weight = c(5,10),subsample = c(0.5,0.7),colsample_bytree = c(0.5,0.8), rate_drop = c(0.7),skip_drop = c(0.3,0.7))
+```
+
+```{r}
+#Testing GBM models
+DXGB1<-train(GS~.-HS-AS-WP-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB2<-train(GS~.-HS-AS-WP-SG-S-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB3<-train(SG~.-HS-AS-WP-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB4<-train(SG~.-HS-AS-WP-MATCH-S-GS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB5<-train(HS~.-WP-AS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+
+DXGB6<-train(AS~.-WP-HS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB7<-train(PCPA~.-PC-PA-PR-WP-HS-AS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB8<-train(DC~.-HS-AS-WP-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB9<-train(D_NOT_IN_POSS~.-HS-AS-WP-MATCH-DC-D_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB10<-train(D_IN_POSS~.-HS-AS-WP-MATCH-DC-D_NOT_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB11<-train(WP~.-H_SCORE-A_SCORE-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Accuracy",trControl=fitControl)
+DXGB12<-train(H_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB13<-train(A_SCORE~.-GS_mean-A_GS_mean-H_SCORE-WP-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB14<-train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB15<-train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB16<-train(GS_mean~.-S_mean-A_S_mean-SG_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB17<-train(GS_mean~.-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB18<-train(SG_mean~.-S_mean-A_S_mean-GS_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB19<-train(SG_mean~.-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB20<-train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-A_DC_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB21<-train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB22<-train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB23<-train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB24<-train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB25<-train(T_OPP_HALF_mean~.-T_PEN_AREA_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB26<-train(T_PEN_AREA_mean~.-T_OPP_HALF_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB27<-train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+
+
+DXGB1
+DXGB2
+DXGB3
+DXGB4
+DXGB5
+DXGB6
+DXGB7
+DXGB8
+DXGB9
+DXGB10
+DXGB11
+DXGB12
+DXGB13
+DXGB14
+DXGB15
+DXGB16
+DXGB17
+DXGB18
+DXGB19
+DXGB20
+DXGB21
+DXGB22
+DXGB23
+DXGB24
+DXGB25
+DXGB26
+DXGB27
+
+DXGB1$finalModel$tuneValue
+DXGB2$finalModel$tuneValue
+DXGB3$finalModel$tuneValue
+DXGB4$finalModel$tuneValue
+DXGB5$finalModel$tuneValue
+DXGB6$finalModel$tuneValue
+DXGB7$finalModel$tuneValue
+DXGB8$finalModel$tuneValue
+DXGB9$finalModel$tuneValue
+DXGB10$finalModel$tuneValue
+DXGB11$finalModel$tuneValue
+DXGB12$finalModel$tuneValue
+DXGB13$finalModel$tuneValue
+DXGB14$finalModel$tuneValue
+DXGB15$finalModel$tuneValue
+DXGB16$finalModel$tuneValue
+DXGB17$finalModel$tuneValue
+DXGB18$finalModel$tuneValue
+DXGB19$finalModel$tuneValue
+DXGB20$finalModel$tuneValue
+DXGB21$finalModel$tuneValue
+DXGB22$finalModel$tuneValue
+DXGB23$finalModel$tuneValue
+DXGB24$finalModel$tuneValue
+DXGB25$finalModel$tuneValue
+DXGB26$finalModel$tuneValue
+DXGB27$finalModel$tuneValue
+```
+
+```{r}
+
+PC1GB1<-train(GS~.-HS-AS-WP-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB2<-train(GS~.-HS-AS-WP-SG-S-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB3<-train(SG~.-HS-AS-WP-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB4<-train(SG~.-HS-AS-WP-MATCH-S-GS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB5<-train(HS~.-WP-AS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+
+PC1GB6<-train(AS~.-WP-HS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB7<-train(PCPA~.-PC-PA-PR-WP-HS-AS-MATCH,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB8<-train(DC~.-HS-AS-WP-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB9<-train(D_NOT_IN_POSS~.-HS-AS-WP-MATCH-DC-D_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB10<-train(D_IN_POSS~.-HS-AS-WP-MATCH-DC-D_NOT_IN_POSS,data=PWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB11<-train(WP~.-H_SCORE-A_SCORE-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Accuracy",trControl=fitControl, preProcess = "pca")
+PC1GB12<-train(H_SCORE~.-GS_mean-A_GS_mean-A_SCORE-WP-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB13<-train(A_SCORE~.-GS_mean-A_GS_mean-H_SCORE-WP-MATCH,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB14<-train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB15<-train(PCPA_mean~.-PC_mean-PA_mean-PR_mean-A_PC_mean-A_PR_mean-A_PA_mean-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB16<-train(GS_mean~.-S_mean-A_S_mean-SG_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB17<-train(GS_mean~.-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB18<-train(SG_mean~.-S_mean-A_S_mean-GS_mean-A_GS_mean-A_SG_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB19<-train(SG_mean~.-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB20<-train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-A_DC_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB21<-train(DC_mean~.-D_IN_POSS_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB22<-train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB23<-train(D_IN_POSS_mean~.-DC_mean-D_NOT_IN_POSS_mean-A_D_IN_POSS_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB24<-train(D_NOT_IN_POSS_mean~.-DC_mean-D_IN_POSS_mean-A_D_IN_POSS_mean-A_DC_mean-A_D_NOT_IN_POSS_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB25<-train(T_OPP_HALF_mean~.-T_PEN_AREA_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB26<-train(T_PEN_AREA_mean~.-T_OPP_HALF_mean-T_ATT_3RD_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+PC1GB27<-train(T_ATT_3RD_mean~.-T_OPP_HALF_mean-T_PEN_AREA_mean-A_T_OPP_HALF_mean-A_T_PEN_AREA_mean-A_T_ATT_3RD_mean-H_SCORE-A_SCORE-MATCH-WP,data=MWC18,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+
+PC1GB1
+PC1GB2
+PC1GB3
+PC1GB4
+PC1GB5
+PC1GB6
+PC1GB7
+PC1GB8
+PC1GB9
+PC1GB10
+PC1GB11
+PC1GB12
+PC1GB13
+PC1GB14
+PC1GB15
+PC1GB16
+PC1GB17
+PC1GB18
+PC1GB19
+PC1GB20
+PC1GB21
+PC1GB22
+PC1GB23
+PC1GB24
+PC1GB25
+PC1GB26
+PC1GB27
+
+
+
+## When you are done:
+stopCluster(cl)
+```

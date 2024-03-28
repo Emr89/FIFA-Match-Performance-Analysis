@@ -1,0 +1,107 @@
+---
+title: "FIFA WP RF MODELS"
+author: "Eric Rupinski"
+date: "2022-08-22"
+output: word_document
+---
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/CMWC.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Game Data Set
+MWC18 <- MTCHWC18 %>% left_join(.,AEFORM, by="MATCH") %>% mutate(WP=if_else(H_SCORE > A_SCORE,"1","0")) %>% na.exclude() %>% select(., -UNI_mean,-A_UNI_mean, - TEAM.x_H,-TEAM.x_A)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+
+#Converting Variables:
+MWC18$WP <- as.factor(MWC18$WP)
+MWC18$H_FORM <- as.factor(MWC18$H_FORM)
+MWC18$A_FORM <- as.factor(MWC18$A_FORM)
+
+```
+
+```{r}
+#S1 WP subset
+S1MWC18<- MWC18 %>% select(.,-H_SCORE,-A_SCORE,-MATCH)
+
+```
+
+
+```{r}
+#Transforming Data sets:
+#Personal Dataset
+PWC_preProcValues1 <- preProcess(PWC18, method = c("center","scale","YeoJohnson"))
+PWC_train_d <- predict(PWC_preProcValues1, PWC18)
+#Match Dataset
+MWC_preProcValues1 <- preProcess(MWC18, method = c("center","scale","YeoJohnson"))
+MWC_train_d <- predict(MWC_preProcValues1, MWC18)
+
+```
+
+```{r}
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+
+
+```
+
+
+```{r}
+#WP RF MODELS
+mtry11<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry38<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=300,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry65<-tuneRF(S1MWC18[,-127],S1MWC18$WP,ntreeTry=200,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+
+best.m11<-mtry11[mtry11[,2]==min(mtry11[,2]),1]
+best.m38<-mtry38[mtry38[,2]==min(mtry38[,2]),1]
+best.m65<-mtry65[mtry65[,2]==min(mtry65[,2]),1]
+
+ARFT11<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Accuracy",tuneGrid=data.frame("mtry"=best.m11),importance=TRUE,trControl=fitControl)
+
+ARFT38<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Accuracy",tuneGrid=data.frame("mtry"=best.m38),importance=TRUE,trControl=fitControl)
+
+ARFT65<-train(S1MWC18[,-127],S1MWC18$WP,method="rf",metric="Accuracy",tuneGrid=data.frame("mtry"=best.m65),importance=TRUE,trControl=fitControl)
+
+```
+

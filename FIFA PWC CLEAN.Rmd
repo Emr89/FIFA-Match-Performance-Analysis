@@ -1,0 +1,700 @@
+---
+title: "FIFA PWC CLEAN"
+author: "Eric Rupinski"
+date: "2022-09-01"
+output: word_document
+---
+
+```{r}
+#Load Data
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(here)
+library(ggplot2)
+library(gganimate)
+library(udpipe)
+library(randomForest)
+library(tidyverse)
+library(caret)
+library(parallel)
+library(lme4)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(moments)
+library(forecast)
+library(fastDummies)
+library(NeuralNetTools)
+library(caret)
+library(psych)
+library(MVN)
+library(ggplot2)
+library(GGally)
+library(ggExtra)
+library(ggalluvial)
+library(plotly)
+library(doParallel)
+
+cl <- makePSOCKcluster(6)
+registerDoParallel(cl)
+
+#Full Game Data
+E_FORM<- read_excel("~/Desktop/Extra info for soccer.xlsx")
+AEFORM <- read_excel("~/Desktop/AEFORM.xlsx")
+MTCHWC18 <- read_excel("~/Desktop/CMWC.xlsx")
+#Personal Data
+PP18 <- read_excel("~/Desktop/PlayerPerformance18.xlsx") %>% na.exclude(P_WC18)
+#Creating Full Personal Data Set
+PWC18 <- PP18 %>% left_join(.,E_FORM, by=c("MATCH","TEAM.x")) %>% mutate(WP=if_else(HS > AS,"1","0"))%>% na.exclude()%>% rename(., PCPA = 'PC/PA')%>% rename(., PFX = 'Preferred Foot.x') %>% select(., - UNI)
+```
+
+```{r}
+#One Hot Encoding:
+
+dummy <- dummyVars(" ~ .", data=PWC18)
+DPWC18 <- data.frame(predict(dummy, newdata = PWC18)) 
+
+#Transforming Data sets:
+#Personal Dataset
+DPWC_preProcValues1 <- preProcess(DPWC18, method = c("center","scale","YeoJohnson"))
+DPWC_train_d <- predict(DPWC_preProcValues1, DPWC18)
+
+#Only PCA
+EPWC_preProcValues1 <- preProcess(DPWC18, method = c("center","scale"))
+EPWC_train_d <- predict(EPWC_preProcValues1, DPWC18)
+
+```
+
+```{r}
+# 10 fold fitControl
+fitControl <- trainControl(method = "repeatedcv",number = 10, repeats = 6)
+
+#Parameters for model selection
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "cv",
+                   verbose = FALSE)
+```
+
+```{r}
+RD_M1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M32<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M33<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M55<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M56<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M57<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M58<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M59<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M60<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M61<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M62<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M63<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M64<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="ridge",preProcess="pca",trControl=fitControl)
+RD_M82<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M83<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M84<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M85<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M86<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M87<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M88<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M89<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M90<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+RD_M91<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="ridge",preProcess=NULL,trControl=fitControl)
+
+EN_M1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M32<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M33<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M55<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M56<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M57<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M58<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M59<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M60<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M61<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M62<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M63<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M64<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="enet",preProcess="pca",trControl=fitControl)
+EN_M82<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M83<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M84<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M85<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M86<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M87<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M88<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M89<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M90<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+EN_M91<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="enet",preProcess=NULL,trControl=fitControl)
+
+GLMN_M1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+
+GLMN_M28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M32<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M33<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+
+GLMN_M55<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M56<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M57<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M58<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M59<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M60<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M61<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M62<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M63<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+GLMN_M64<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess="pca",trControl=fitControl)
+
+GLMN_M82<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M83<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M84<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M85<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M86<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M87<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M88<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M89<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M90<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+GLMN_M91<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="glmnet",preProcess=NULL,trControl=fitControl)
+
+NN_M1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M32<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M33<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M55<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M56<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M57<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M58<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M59<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M60<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M61<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M62<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M63<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M64<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="nnet",preProcess="pca",trControl=fitControl)
+NN_M82<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M83<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M84<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M85<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M86<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M87<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M88<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M89<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M90<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+NN_M91<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="nnet",preProcess=NULL,trControl=fitControl)
+```
+
+
+```{r}
+#Subsets:
+S1DPWC_train_d<- DPWC_train_d %>% select(., -SG,-S,-(WP0:WP1),-HS,-AS,-MATCH)
+S1DPWC_train_dA<- DPWC_train_d %>% select(.,-(WP0:WP1),-HS,-AS,-MATCH)
+S2DPWC_train_d<- DPWC_train_d %>% select(., -GS,-S,-(WP0:WP1),-HS,-AS,-MATCH)
+S2DPWC_train_dA<- DPWC_train_d %>% select(.,-(WP0:WP1),-HS,-AS,-MATCH)
+S3DPWC_train_d<- DPWC_train_d %>% select(.,-(WP0:WP1),-AS,-MATCH)
+S4DPWC_train_d<- DPWC_train_d %>% select(.,-(WP0:WP1),-HS,-MATCH)
+S5DPWC_train_d<- DPWC_train_d %>% select(., -PC,-PA,-PR,-(WP0:WP1),-HS,-AS,-MATCH)
+S6DPWC_train_d<- DPWC_train_d %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+S7DPWC_train_d<- DPWC_train_d %>% select(., -DC,-D_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+S8DPWC_train_d<- DPWC_train_d %>% select(., -DC,-D_NOT_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+
+S1EPWC_train_d<- EPWC_train_d %>% select(., -SG,-S,-(WP0:WP1),-HS,-AS,-MATCH)
+S1EPWC_train_dA<- EPWC_train_d %>% select(.,-(WP0:WP1),-HS,-AS,-MATCH)
+S2EPWC_train_d<- EPWC_train_d %>% select(., -GS,-S,-(WP0:WP1),-HS,-AS,-MATCH)
+S2EPWC_train_dA<- EPWC_train_d %>% select(.,-(WP0:WP1),-HS,-AS,-MATCH)
+S3EPWC_train_d<- EPWC_train_d %>% select(.,-(WP0:WP1),-AS,-MATCH)
+S4EPWC_train_d<- EPWC_train_d %>% select(.,-(WP0:WP1),-HS,-MATCH)
+S5EPWC_train_d<- EPWC_train_d %>% select(., -PC,-PA,-PR,-(WP0:WP1),-HS,-AS,-MATCH)
+S6EPWC_train_d<- EPWC_train_d %>% select(., -D_NOT_IN_POSS,-D_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+S7EPWC_train_d<- EPWC_train_d %>% select(., -DC,-D_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+S8EPWC_train_d<- EPWC_train_d %>% select(., -DC,-D_NOT_IN_POSS,-(WP0:WP1),-HS,-AS,-MATCH)
+```
+
+```{r}
+LMPRO1<-rfe(x=S1DPWC_train_d[,-42],y=S1DPWC_train_d$GS,rfeControl=ctrl)
+LMPRO2<-rfe(x=S1DPWC_train_dA[,-42],y=S1DPWC_train_dA$GS,rfeControl=ctrl)
+LMPRO3<-rfe(x=S2DPWC_train_d[,-42],y=S2DPWC_train_d$SG,rfeControl=ctrl)
+LMPRO4<-rfe(x=S2DPWC_train_dA[,-44],y=S2DPWC_train_dA$SG,rfeControl=ctrl)
+LMPRO5<-rfe(x=S3DPWC_train_d[,-108],y=S3DPWC_train_d$HS,rfeControl=ctrl)
+LMPRO6<-rfe(x=S4DPWC_train_d[,-108],y=S4DPWC_train_d$AS,rfeControl=ctrl)
+LMPRO7<-rfe(x=S5DPWC_train_d[,-37],y=S5DPWC_train_d$PCPA,rfeControl=ctrl)
+LMPRO8<-rfe(x=S6DPWC_train_d[,-47],y=S6DPWC_train_d$DC,rfeControl=ctrl)
+LMPRO9<-rfe(x=S7DPWC_train_d[,-47],y=S7DPWC_train_d$D_NOT_IN_POSS,rfeControl=ctrl)
+LMPRO10<-rfe(x=S8DPWC_train_d[,-47],y=S8DPWC_train_d$D_IN_POSS,rfeControl=ctrl)
+LMPRO28<-rfe(x=S1EPWC_train_d[,-42],y=S1EPWC_train_d$GS,rfeControl=ctrl, preProcess = "pca")
+LMPRO29<-rfe(x=S1EPWC_train_dA[,-42],y=S1EPWC_train_dA$GS,rfeControl=ctrl, preProcess = "pca")
+LMPRO30<-rfe(x=S2EPWC_train_d[,-42],y=S2EPWC_train_d$SG,rfeControl=ctrl, preProcess = "pca")
+LMPRO31<-rfe(x=S2EPWC_train_dA[,-44],y=S2EPWC_train_dA$SG,rfeControl=ctrl, preProcess = "pca")
+LMPRO32<-rfe(x=S3EPWC_train_d[,-108],y=S3EPWC_train_d$HS,rfeControl=ctrl, preProcess = "pca")
+LMPRO33<-rfe(x=S4EPWC_train_d[,-108],y=S4EPWC_train_d$AS,rfeControl=ctrl, preProcess = "pca")
+LMPRO34<-rfe(x=S5EPWC_train_d[,-37],y=S5EPWC_train_d$PCPA,rfeControl=ctrl, preProcess = "pca")
+LMPRO35<-rfe(x=S6EPWC_train_d[,-47],y=S6EPWC_train_d$DC,rfeControl=ctrl, preProcess = "pca")
+LMPRO36<-rfe(x=S7EPWC_train_d[,-47],y=S7EPWC_train_d$D_NOT_IN_POSS,rfeControl=ctrl, preProcess = "pca")
+LMPRO37<-rfe(x=S8EPWC_train_d[,-47],y=S8EPWC_train_d$D_IN_POSS,rfeControl=ctrl, preProcess = "pca")
+```
+
+```{r}
+mtry1<-tuneRF(S1DPWC_train_d[,-42],S1DPWC_train_d$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry2<-tuneRF(S1DPWC_train_dA[,-42],S1DPWC_train_dA$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry3<-tuneRF(S2DPWC_train_d[,-42],S2DPWC_train_d$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry4<-tuneRF(S2DPWC_train_dA[,-44],S2DPWC_train_dA$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry5<-tuneRF(S3DPWC_train_d[,-108],S3DPWC_train_d$HS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry6<-tuneRF(S4DPWC_train_d[,-108],S4DPWC_train_d$AS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry7<-tuneRF(S5DPWC_train_d[,-37],S5DPWC_train_d$PCPA,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry8<-tuneRF(S6DPWC_train_d[,-47],S6DPWC_train_d$DC,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry9<-tuneRF(S7DPWC_train_d[,-47],S7DPWC_train_d$D_NOT_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry10<-tuneRF(S8DPWC_train_d[,-47],S8DPWC_train_d$D_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry28<-tuneRF(S1EPWC_train_d[,-42],S1EPWC_train_d$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry29<-tuneRF(S1EPWC_train_dA[,-42],S1EPWC_train_dA$GS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry30<-tuneRF(S2EPWC_train_d[,-42],S2EPWC_train_d$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry31<-tuneRF(S2EPWC_train_dA[,-44],S2EPWC_train_dA$SG,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry32<-tuneRF(S3EPWC_train_d[,-108],S3EPWC_train_d$HS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry33<-tuneRF(S4EPWC_train_d[,-108],S4EPWC_train_d$AS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry34<-tuneRF(S5EPWC_train_d[,-37],S5EPWC_train_d$PCPA,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry35<-tuneRF(S6EPWC_train_d[,-47],S6EPWC_train_d$DC,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry36<-tuneRF(S7EPWC_train_d[,-47],S7EPWC_train_d$D_NOT_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+mtry37<-tuneRF(S8EPWC_train_d[,-47],S8EPWC_train_d$D_IN_POSS,ntreeTry=400,stepFactor=1.5,improve=0.01,trace=TRUE,plot=TRUE)
+
+best.m1<-mtry1[mtry1[,2]==min(mtry1[,2]),1]
+best.m2<-mtry2[mtry2[,2]==min(mtry2[,2]),1]
+best.m3<-mtry3[mtry3[,2]==min(mtry3[,2]),1]
+best.m4<-mtry4[mtry4[,2]==min(mtry4[,2]),1]
+best.m5<-mtry5[mtry5[,2]==min(mtry5[,2]),1]
+best.m6<-mtry6[mtry6[,2]==min(mtry6[,2]),1]
+best.m7<-mtry7[mtry7[,2]==min(mtry7[,2]),1]
+best.m8<-mtry8[mtry8[,2]==min(mtry8[,2]),1]
+best.m9<-mtry9[mtry9[,2]==min(mtry9[,2]),1]
+best.m10<-mtry10[mtry10[,2]==min(mtry10[,2]),1]
+best.m28<-mtry28[mtry28[,2]==min(mtry28[,2]),1]
+best.m29<-mtry29[mtry29[,2]==min(mtry29[,2]),1]
+best.m30<-mtry30[mtry30[,2]==min(mtry30[,2]),1]
+best.m31<-mtry31[mtry31[,2]==min(mtry31[,2]),1]
+best.m32<-mtry32[mtry32[,2]==min(mtry32[,2]),1]
+best.m33<-mtry33[mtry33[,2]==min(mtry33[,2]),1]
+best.m34<-mtry34[mtry34[,2]==min(mtry34[,2]),1]
+best.m35<-mtry35[mtry35[,2]==min(mtry35[,2]),1]
+best.m36<-mtry36[mtry36[,2]==min(mtry36[,2]),1]
+best.m37<-mtry37[mtry37[,2]==min(mtry37[,2]),1]
+
+
+ARFT1<-train(S1DPWC_train_d[,-42],S1DPWC_train_d$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m1),importance=TRUE,trControl=fitControl)
+ARFT2<-train(S1DPWC_train_dA[,-42],S1DPWC_train_dA$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m2),importance=TRUE,trControl=fitControl)
+ARFT3<-train(S2DPWC_train_d[,-42],S2DPWC_train_d$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m3),importance=TRUE,trControl=fitControl)
+ARFT4<-train(S2DPWC_train_dA[,-44],S2DPWC_train_dA$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m4),importance=TRUE,trControl=fitControl)
+ARFT5<-train(S3DPWC_train_d[,-108],S3DPWC_train_d$HS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m5),importance=TRUE,trControl=fitControl)
+ARFT6<-train(S4DPWC_train_d[,-108],S4DPWC_train_d$AS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m6),importance=TRUE,trControl=fitControl)
+ARFT7<-train(S5DPWC_train_d[,-37],S5DPWC_train_d$PCPA,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m7),importance=TRUE,trControl=fitControl)
+ARFT8<-train(S6DPWC_train_d[,-47],S6DPWC_train_d$DC,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m8),importance=TRUE,trControl=fitControl)
+ARFT9<-train(S7DPWC_train_d[,-47],S7DPWC_train_d$D_NOT_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m9),importance=TRUE,trControl=fitControl)
+ARFT10<-train(S8DPWC_train_d[,-47],S8DPWC_train_d$D_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m10),importance=TRUE,trControl=fitControl)
+ARFT28<-train(S1EPWC_train_d[,-42],S1EPWC_train_d$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m28),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT29<-train(S1EPWC_train_dA[,-42],S1EPWC_train_dA$GS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m29),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT30<-train(S2EPWC_train_d[,-42],S2EPWC_train_d$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m30),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT31<-train(S2EPWC_train_dA[,-44],S2EPWC_train_dA$SG,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m31),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT32<-train(S3EPWC_train_d[,-108],S3EPWC_train_d$HS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m32),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT33<-train(S4EPWC_train_d[,-108],S4EPWC_train_d$AS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m33),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT34<-train(S5EPWC_train_d[,-37],S5EPWC_train_d$PCPA,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m34),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT35<-train(S6EPWC_train_d[,-47],S6EPWC_train_d$DC,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m35),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT36<-train(S7EPWC_train_d[,-47],S7EPWC_train_d$D_NOT_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m36),importance=TRUE,trControl=fitControl, preProcess = "pca")
+ARFT37<-train(S8EPWC_train_d[,-47],S8EPWC_train_d$D_IN_POSS,method="rf",metric="Rsquared",tuneGrid=data.frame("mtry"=best.m37),importance=TRUE,trControl=fitControl, preProcess = "pca")
+```
+
+```{r}
+#XGB Dart
+TG1 <- expand.grid(nrounds=c(200,300),eta = c(0.01),gamma = c(0),max_depth = c(6),min_child_weight = c(5,10),subsample = c(0.5,0.7),colsample_bytree = c(0.5,0.8), rate_drop = c(0.7),skip_drop = c(0.3,0.7))
+
+GG1 <- expand.grid(nrounds=c(100,200,300),eta = c(0.01),gamma = c(0),max_depth = c(4,6,8,10),min_child_weight = c(5,7,10),subsample = c(0.5,0.7),colsample_bytree = c(0.5,0.8))
+
+FG1 <- expand.grid(ntrees=c(100,300,600),learn_rate = c(0.01),max_depth = c(4,6,8),col_sample_rate = c(0.4,0.9), min_rows = c(1,3,5))
+```
+
+
+```{r}
+DXGB1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+DXGB10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl)
+
+DXGB28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB32<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB33<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+DXGB37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="xgbDART",tuneGrid=TG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+
+
+EXGB1<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB2<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB3<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB4<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB5<-train(HS~.-WP0-WP1-AS-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB6<-train(AS~.-WP0-WP1-HS-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB7<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB8<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB9<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+EXGB10<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=DPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl)
+
+EXGB28<-train(GS~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB29<-train(GS~.-HS-AS-WP0-WP1-SG-S-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB30<-train(SG~.-HS-AS-WP0-WP1-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB31<-train(SG~.-HS-AS-WP0-WP1-MATCH-S-GS,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB32<-train(HS~.-WP0-WP1-AS-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB33<-train(AS~.-WP0-WP1-HS-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB34<-train(PCPA~.-PC-PA-PR-WP0-WP1-HS-AS-MATCH,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB35<-train(DC~.-HS-AS-WP0-WP1-MATCH-D_NOT_IN_POSS-D_IN_POSS,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB36<-train(D_NOT_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_IN_POSS,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+EXGB37<-train(D_IN_POSS~.-HS-AS-WP0-WP1-MATCH-DC-D_NOT_IN_POSS,data=EPWC_train_d,method="xgbTree",tuneGrid=GG1,metric="Rsquared",trControl=fitControl, preProcess = "pca")
+```
+
+```{r}
+#summary:
+RD_M1
+RD_M2
+RD_M3
+RD_M4
+RD_M5
+RD_M6
+RD_M7
+RD_M8
+RD_M9
+RD_M10
+RD_M28
+RD_M29
+RD_M30
+RD_M31
+RD_M32
+RD_M33
+RD_M34
+RD_M35
+RD_M36
+RD_M37
+RD_M55
+RD_M56
+RD_M57
+RD_M58
+RD_M59
+RD_M60
+RD_M61
+RD_M62
+RD_M63
+RD_M64
+RD_M82
+RD_M83
+RD_M84
+RD_M85
+RD_M86
+RD_M87
+RD_M88
+RD_M89
+RD_M90
+RD_M91
+
+EN_M1
+EN_M2
+EN_M3
+EN_M4
+EN_M5
+EN_M6
+EN_M7
+EN_M8
+EN_M9
+EN_M10
+EN_M28
+EN_M29
+EN_M30
+EN_M31
+EN_M32
+EN_M33
+EN_M34
+EN_M35
+EN_M36
+EN_M37
+EN_M55
+EN_M56
+EN_M57
+EN_M58
+EN_M59
+EN_M60
+EN_M61
+EN_M62
+EN_M63
+EN_M64
+EN_M82
+EN_M83
+EN_M84
+EN_M85
+EN_M86
+EN_M87
+EN_M88
+EN_M89
+EN_M90
+EN_M91
+GLMN_M1
+GLMN_M2
+GLMN_M3
+GLMN_M4
+GLMN_M5
+GLMN_M6
+GLMN_M7
+GLMN_M8
+GLMN_M9
+GLMN_M10
+GLMN_M28
+GLMN_M29
+GLMN_M30
+GLMN_M31
+GLMN_M32
+GLMN_M33
+GLMN_M34
+GLMN_M35
+GLMN_M36
+GLMN_M37
+GLMN_M55
+GLMN_M56
+GLMN_M57
+GLMN_M58
+GLMN_M59
+GLMN_M60
+GLMN_M61
+GLMN_M62
+GLMN_M63
+GLMN_M64
+GLMN_M82
+GLMN_M83
+GLMN_M84
+GLMN_M85
+GLMN_M86
+GLMN_M87
+GLMN_M88
+GLMN_M89
+GLMN_M90
+GLMN_M91
+
+
+NN_M1
+NN_M2
+NN_M3
+NN_M4
+NN_M5
+NN_M6
+NN_M7
+NN_M8
+NN_M9
+NN_M10
+NN_M28
+NN_M29
+NN_M30
+NN_M31
+NN_M32
+NN_M33
+NN_M34
+NN_M35
+NN_M36
+NN_M37
+NN_M55
+NN_M56
+NN_M57
+NN_M58
+NN_M59
+NN_M60
+NN_M61
+NN_M62
+NN_M63
+NN_M64
+NN_M82
+NN_M83
+NN_M84
+NN_M85
+NN_M86
+NN_M87
+NN_M88
+NN_M89
+NN_M90
+NN_M91
+
+LMPRO1$variables
+LMPRO2$variables
+LMPRO3$variables
+LMPRO4$variables
+LMPRO5$variables
+LMPRO6$variables
+LMPRO7$variables
+LMPRO8$variables
+LMPRO9$variables
+LMPRO10$variables
+LMPRO28$variables
+LMPRO29$variables
+LMPRO30$variables
+LMPRO31$variables
+LMPRO32$variables
+LMPRO33$variables
+LMPRO34$variables
+LMPRO35$variables
+LMPRO36$variables
+LMPRO37$variables
+
+
+LMPRO1
+LMPRO2
+LMPRO3
+LMPRO4
+LMPRO5
+LMPRO6
+LMPRO7
+LMPRO8
+LMPRO9
+LMPRO10
+LMPRO28
+LMPRO29
+LMPRO30
+LMPRO31
+LMPRO32
+LMPRO33
+LMPRO34
+LMPRO35
+LMPRO36
+LMPRO37
+
+ARFT1
+ARFT2
+ARFT3
+ARFT4
+ARFT5
+ARFT6
+ARFT7
+ARFT8
+ARFT9
+ARFT10
+ARFT28
+ARFT29
+ARFT30
+ARFT31
+ARFT32
+ARFT33
+ARFT34
+ARFT35
+ARFT36
+ARFT37
+
+DXGB1
+DXGB2
+DXGB3
+DXGB4
+DXGB5
+DXGB6
+DXGB7
+DXGB8
+DXGB9
+DXGB10
+DXGB28
+DXGB29
+DXGB30
+DXGB31
+DXGB32
+DXGB33
+DXGB34
+DXGB35
+DXGB36
+DXGB37
+
+
+EXGB1
+EXGB2
+EXGB3
+EXGB4
+EXGB5
+EXGB6
+EXGB7
+EXGB8
+EXGB9
+EXGB10
+EXGB28
+EXGB29
+EXGB30
+EXGB31
+EXGB32
+EXGB33
+EXGB34
+EXGB35
+EXGB36
+EXGB37
+```
+
+
+```{r}
+## When you are done:
+stopCluster(cl)
+
+```
+
